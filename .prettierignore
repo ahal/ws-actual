@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Test coverage
+coverage/
+
+# Environment files
+.env
+.env.*
+
+# Package manager files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Git
+.git/
+
+# ActualBudget cache
+.actual/
+*.actual
+
+# Temporary files
+*.tmp
+*.log
+
+# Config files that shouldn't be formatted
+*.toml
+*.md

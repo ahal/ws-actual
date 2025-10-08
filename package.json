@@ -1,0 +1,62 @@
+{
+  "name": "ws-actual",
+  "version": "1.0.0",
+  "description": "WealthSimple to ActualBudget transaction importer",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "ws-actual": "./bin/cli.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js",
+    "test": "node --test test/*.test.js",
+    "test:integration": "node --test test/*integration*.test.js",
+    "test:unit": "node --test test/*unit*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage test/*.test.js",
+    "test:watch": "node --test --watch test/*.test.js",
+    "lint": "eslint src bin test",
+    "lint:fix": "eslint src bin test --fix",
+    "format": "prettier --write 'src/**/*.js' 'bin/**/*.js' 'test/**/*.js'",
+    "format:check": "prettier --check 'src/**/*.js' 'bin/**/*.js' 'test/**/*.js'",
+    "precommit": "npm run lint && npm run format:check && npm test",
+    "prepare": "husky || true",
+    "pre-commit": "lint-staged",
+    "debug:dom": "node debug-dom.js"
+  },
+  "keywords": [
+    "wealthsimple",
+    "actual",
+    "actualbudget",
+    "import",
+    "finance",
+    "transactions"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@actual-app/api": "25.10.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.0.0",
+    "csv-parse": "^5.5.0",
+    "date-fns": "^4.1.0",
+    "keytar": "^7.9.0",
+    "playwright": "^1.56.1",
+    "toml": "^3.0.0",
+    "xdg-basedir": "^5.1.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  }
+}

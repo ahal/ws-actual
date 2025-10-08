@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Run lint-staged for linting and formatting
+npm run pre-commit
+
+# Run tests to ensure they pass before committing
+echo "Running tests..."
+npm test

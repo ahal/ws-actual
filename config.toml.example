@@ -1,0 +1,25 @@
+# WealthSimple to ActualBudget Configuration
+# Copy this file to ~/.config/ws-actual/config.toml and customize
+
+[actualServer]
+url = "http://localhost:5006"
+syncId = "your-sync-id-here"
+
+# Account mappings - WealthSimple patterns to ActualBudget account IDs
+# wsPattern can be exact strings or regex patterns
+
+[[accounts]]
+wsPattern = "WealthSimple Cash"
+actualAccountId = "uuid-from-actualbudget"
+
+[[accounts]]
+wsPattern = ".*TFSA.*"
+actualAccountId = "uuid-from-actualbudget"
+
+[[accounts]]
+wsPattern = ".*RRSP.*"
+actualAccountId = "uuid-from-actualbudget"
+
+[[accounts]]
+wsPattern = "Chequing( • Solo)?"
+actualAccountId = "uuid-from-actualbudget"

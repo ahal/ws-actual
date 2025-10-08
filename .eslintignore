@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Test coverage
+coverage/
+
+# Environment files
+.env
+.env.*
+
+# Git
+.git/
+
+# ActualBudget cache
+.actual/
+*.actual
+
+# Config files
+*.json
+*.toml
+*.md
