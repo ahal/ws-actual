@@ -81,16 +81,29 @@ export async function generateAccountConfig(options = {}) {
         );
 
         if (wsPattern) {
-          // Add to accounts array
+          // Add or update mapping in accounts array
           if (!Array.isArray(fullConfig.accounts)) {
             fullConfig.accounts = [];
           }
-          fullConfig.accounts.push({
-            wsAccountName: wsPattern,
-            actualAccountId: account.id
-          });
-          mappingsCreated++;
-          console.log(`✅ Mapped account "${wsPattern}" → "${account.name}"`);
+
+          // Check if mapping already exists for this WealthSimple account
+          const existingIndex = fullConfig.accounts.findIndex(
+            (acc) => acc.wsAccountName === wsPattern
+          );
+
+          if (existingIndex >= 0) {
+            // Update existing mapping
+            fullConfig.accounts[existingIndex].actualAccountId = account.id;
+            console.log(`✅ Updated mapping: "${wsPattern}" → "${account.name}"`);
+          } else {
+            // Add new mapping
+            fullConfig.accounts.push({
+              wsAccountName: wsPattern,
+              actualAccountId: account.id
+            });
+            mappingsCreated++;
+            console.log(`✅ Mapped account "${wsPattern}" → "${account.name}"`);
+          }
         } else {
           console.log('⚠️  Skipped (empty account name)');
         }

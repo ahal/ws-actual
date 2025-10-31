@@ -3,17 +3,10 @@ import { createClient } from './actual-client.js';
 import { transformTransactions, calculateStatistics, validateTransaction } from './transformer.js';
 import { getConfig, validateConfig, loadConfig, saveConfig, resolveAccount } from './config.js';
 import { formatTransactionsTable } from './table-formatter.js';
-import { getUniqueAccounts, promptForAccountMapping } from './account-mapper.js';
+import { getUniqueAccounts } from './account-mapper.js';
 
-// Re-export auth functions
-export { login, logout, testConnection, clearCache } from './auth-manager.js';
-
-// Re-export account operations
-export {
-  listAccounts,
-  generateAccountConfig,
-  validateAccountMappings
-} from './account-operations.js';
+// Re-export setup function
+export { setup } from './setup.js';
 
 /**
  * Main import function
@@ -160,31 +153,7 @@ export async function importTransactions(options = {}) {
       const resolved = resolveAccount(wsAccount, fullConfig);
 
       if (!resolved) {
-        // No mapping found
-        if (options.addMissingAccounts && !config.dryRun) {
-          // Prompt user to map this account
-          console.log(
-            `\n❓ Unmapped account found: ${wsAccount} (${accountTransactions.length} transactions)`
-          );
-
-          const resolvedMapping = await promptForAccountMapping(wsAccount, client, fullConfig);
-          if (resolvedMapping) {
-            // Account was mapped, process it
-            const transformed = transformTransactions(accountTransactions, {
-              accountId: resolvedMapping.accountId,
-              accountName: resolvedMapping.accountName,
-              isAccountMapped: isAccountMapped
-            });
-
-            transformedGroups.set(wsAccount, {
-              transactions: transformed,
-              accountInfo: resolvedMapping
-            });
-            continue;
-          }
-        }
-
-        // Skip this account (either user chose to skip or flag not set)
+        // Skip unmapped accounts
         skippedAccounts.push(wsAccount);
         console.log(
           `Skipping unmapped account: ${wsAccount} (${accountTransactions.length} transactions)`
@@ -427,37 +396,10 @@ export async function importTransactions(options = {}) {
   }
 }
 
-// Keep reset as an alias for backward compatibility but mark as deprecated
-export { logout as reset } from './auth-manager.js';
-
 export default {
   importTransactions,
-  listAccounts: async (options) => {
-    const { listAccounts: list } = await import('./account-operations.js');
-    return list(options);
-  },
-  generateAccountConfig: async (options) => {
-    const { generateAccountConfig: generate } = await import('./account-operations.js');
-    return generate(options);
-  },
-  validateAccountMappings: async (options) => {
-    const { validateAccountMappings: validate } = await import('./account-operations.js');
-    return validate(options);
-  },
-  clearCache: async (options) => {
-    const { clearCache: clear } = await import('./auth-manager.js');
-    return clear(options);
-  },
-  login: async (options) => {
-    const { login: doLogin } = await import('./auth-manager.js');
-    return doLogin(options);
-  },
-  logout: async (options) => {
-    const { logout: doLogout } = await import('./auth-manager.js');
-    return doLogout(options);
-  },
-  reset: async (options) => {
-    const { logout: doLogout } = await import('./auth-manager.js');
-    return doLogout(options);
+  setup: async (options) => {
+    const { setup: doSetup } = await import('./setup.js');
+    return doSetup(options);
   }
 };

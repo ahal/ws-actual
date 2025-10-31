@@ -21,10 +21,14 @@ export function getUniqueAccounts(transactions) {
  * @param {string} wsAccountName WealthSimple account name
  * @param {Object} client ActualBudget client
  * @param {Object} fullConfig Full configuration object
+ * @param {Object} [rl] Optional readline interface (if not provided, creates a new one)
  * @returns {Promise<Object|null>} Account mapping info or null if skipped
  */
-export async function promptForAccountMapping(wsAccountName, client, fullConfig) {
-  const rl = createReadlineInterface();
+export async function promptForAccountMapping(wsAccountName, client, fullConfig, rl = null) {
+  const shouldCloseRl = !rl;
+  if (!rl) {
+    rl = createReadlineInterface();
+  }
 
   try {
     // Get available ActualBudget accounts and sort alphabetically
@@ -59,19 +63,31 @@ export async function promptForAccountMapping(wsAccountName, client, fullConfig)
 
     const selectedAccount = actualAccounts[index];
 
-    // Add mapping to config
+    // Add or update mapping in config
     if (!fullConfig.accounts) {
       fullConfig.accounts = [];
     }
 
-    fullConfig.accounts.push({
-      wsAccountName: wsAccountName,
-      actualAccountId: selectedAccount.id
-    });
+    // Check if mapping already exists for this WealthSimple account
+    const existingIndex = fullConfig.accounts.findIndex(
+      (acc) => acc.wsAccountName === wsAccountName
+    );
+
+    if (existingIndex >= 0) {
+      // Update existing mapping
+      fullConfig.accounts[existingIndex].actualAccountId = selectedAccount.id;
+      console.log(`✅ Updated mapping: "${wsAccountName}" → "${selectedAccount.name}"`);
+    } else {
+      // Add new mapping
+      fullConfig.accounts.push({
+        wsAccountName: wsAccountName,
+        actualAccountId: selectedAccount.id
+      });
+      console.log(`✅ Mapped "${wsAccountName}" → "${selectedAccount.name}"`);
+    }
 
     // Save updated config
     await saveConfig(fullConfig);
-    console.log(`✅ Mapped "${wsAccountName}" → "${selectedAccount.name}"`);
 
     return {
       accountId: selectedAccount.id,
@@ -83,7 +99,9 @@ export async function promptForAccountMapping(wsAccountName, client, fullConfig)
     console.error('❌ Error during account mapping:', error.message);
     return null;
   } finally {
-    rl.close();
+    if (shouldCloseRl) {
+      rl.close();
+    }
   }
 }
 
