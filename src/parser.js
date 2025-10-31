@@ -187,20 +187,71 @@ export async function processTransactionDetails(page, elementSelector) {
       rowData.fields.push({ name, value });
     }
 
-    // Extract description from transaction header
-    const transactionHeaderExp =
-      '../child::*[1]/child::*[1]/child::*[1]/child::*[1]/child::*[2]/child::*[1]';
-    const transactionHeader = document.evaluate(
-      transactionHeaderExp,
-      element,
-      null,
-      XPathResult.FIRST_ORDERED_NODE_TYPE,
-      null
-    ).singleNodeValue;
-    const description = transactionHeader?.textContent;
+    // Extract description and subheading from the transaction button (summary view)
+    // The button ID is the region ID with -region replaced by -header
+    const regionId = element.getAttribute('id');
+    if (regionId) {
+      const buttonId = regionId.replace(/-region$/, '-header');
+      const button = document.getElementById(buttonId);
 
-    if (description) {
-      rowData.description = description;
+      if (button) {
+        // Full description is the button's text content
+        const description = button.textContent;
+        if (description) {
+          rowData.description = description;
+        }
+
+        // Extract subheading by looking for <p> tags with fontWeight >= 500
+        // Structure: button > div > div > div > [p (name), div > p (subheading)]
+        const allParagraphs = button.querySelectorAll('p');
+        for (const p of allParagraphs) {
+          const style = window.getComputedStyle(p);
+          const fontWeight = parseInt(style.fontWeight) || 400;
+          const text = p.textContent?.trim();
+
+          // Look for medium-weight text that's not the full description and not empty
+          // Skip the first paragraph (usually the main name)
+          if (fontWeight >= 500 && text && text !== description) {
+            // Find the second medium-weight paragraph - that's usually the subheading
+            if (!rowData.firstBoldText) {
+              rowData.firstBoldText = text;
+            } else if (!rowData.subheading) {
+              rowData.subheading = text;
+              break;
+            }
+          }
+        }
+
+        // If we only found one bold text, that's probably the subheading
+        if (!rowData.subheading && rowData.firstBoldText) {
+          // Check if the first bold text looks like a transaction type
+          const text = rowData.firstBoldText;
+          // Common transaction types that should be considered subheadings
+          const typeKeywords = [
+            'interac',
+            'transfer',
+            'deposit',
+            'withdrawal',
+            'payment',
+            'debit',
+            'credit',
+            'purchase',
+            'refund',
+            'dividend',
+            'interest',
+            'bonus'
+          ];
+          const lowerText = text.toLowerCase();
+          const isLikelyType = typeKeywords.some((keyword) => lowerText.includes(keyword));
+
+          if (isLikelyType) {
+            rowData.subheading = text;
+          }
+        }
+
+        // Clean up temporary field
+        delete rowData.firstBoldText;
+      }
     }
 
     return rowData;
@@ -223,6 +274,11 @@ export function parseTransaction(rawData) {
   // Add description
   if (rawData.description) {
     transaction.description = rawData.description;
+  }
+
+  // Infer type from subheading (bolded portion) if type is not present
+  if (!transaction.type && rawData.subheading) {
+    transaction.type = rawData.subheading;
   }
 
   // Handle transfers: infer account from amount direction

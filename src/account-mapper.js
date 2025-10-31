@@ -3,16 +3,36 @@ import { saveConfig } from './config.js';
 
 /**
  * Get unique accounts from transactions
+ * Includes accounts from main account field and from/to fields in transfers
+ * Excludes accounts from Interac e-Transfers, Pre-authorized debits, and Direct deposits
  * @param {Array} transactions - Array of transactions
  * @returns {Array<string>} - Unique account names
  */
 export function getUniqueAccounts(transactions) {
   const accounts = new Set();
+
   transactions.forEach((transaction) => {
+    const typeStr = transaction.type ? transaction.type.toLowerCase() : '';
+    const isInteracTransfer = typeStr.includes('interac e-transfer');
+    const isPreAuthorizedDebit = typeStr.includes('pre-authorized debit');
+    const isDirectDeposit = typeStr.includes('direct deposit');
+
+    // Add main account (WealthSimple account)
     if (transaction.account) {
       accounts.add(transaction.account);
     }
+
+    // Add from/to accounts for transfers (but skip excluded transaction types)
+    if (!isInteracTransfer && !isPreAuthorizedDebit && !isDirectDeposit) {
+      if (transaction.from && transaction.from.trim()) {
+        accounts.add(transaction.from);
+      }
+      if (transaction.to && transaction.to.trim()) {
+        accounts.add(transaction.to);
+      }
+    }
   });
+
   return Array.from(accounts);
 }
 
