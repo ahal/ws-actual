@@ -222,12 +222,15 @@ describe('Transformer Validation and Statistics Tests', () => {
 
       const results = transformTransactions(wsTransactions);
 
-      assert.strictEqual(results.length, 4);
-      // All should transform (some may have null/NaN values)
+      // Should filter out transactions with invalid amounts (NaN)
+      // missingAmount has empty amount string which becomes NaN and is filtered out
+      assert.strictEqual(results.length, 3);
       results.forEach((result) => {
         assert.ok(result);
         assert.ok('Date' in result);
         assert.ok('Amount' in result);
+        // All results should have finite amounts (invalid ones are filtered)
+        assert.ok(Number.isFinite(result.Amount));
       });
     });
   });
@@ -415,8 +418,8 @@ describe('Transformer Validation and Statistics Tests', () => {
       assert.strictEqual(result._transferToAccount, 'Savings Account');
 
       // Underscore prefix indicates these are internal metadata
-      assert.ok(result.hasOwnProperty('_isTransfer'));
-      assert.ok(result.hasOwnProperty('_transferToAccount'));
+      assert.ok(Object.prototype.hasOwnProperty.call(result, '_isTransfer'));
+      assert.ok(Object.prototype.hasOwnProperty.call(result, '_transferToAccount'));
     });
 
     it('should validate transfers have required fields', () => {
