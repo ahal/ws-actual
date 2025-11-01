@@ -1,6 +1,12 @@
 import { scrapeTransactions } from './scraper.js';
+import { scrapeAccountBalancesV2 } from './scraper-balance-v2.js';
 import { createClient } from './actual-client.js';
-import { transformTransactions, calculateStatistics, validateTransaction } from './transformer.js';
+import {
+  transformTransactions,
+  calculateStatistics,
+  validateTransaction,
+  shouldIncludeTransaction
+} from './transformer.js';
 import { getConfig, validateConfig, loadConfig, saveConfig, resolveAccount } from './config.js';
 import { formatTransactionsTable } from './table-formatter.js';
 import { getUniqueAccounts } from './account-mapper.js';
@@ -38,18 +44,45 @@ export async function importTransactions(options = {}) {
     } else {
       console.log('Launching browser to extract transactions from WealthSimple...');
     }
-    const wsTransactions = await scrapeTransactions({
+
+    // Keep context open if we need to scrape balances later
+    const keepContextOpen = !config.dryRun && options.adjustBalances;
+    const scrapeResult = await scrapeTransactions({
       verbose: config.verbose,
-      remoteBrowserUrl: options.remoteBrowserUrl
+      remoteBrowserUrl: options.remoteBrowserUrl,
+      keepContextOpen: keepContextOpen
     });
 
-    if (wsTransactions.length === 0) {
+    // Extract transactions and context from result
+    let rawTransactions, browserContext;
+    if (keepContextOpen) {
+      rawTransactions = scrapeResult.transactions;
+      browserContext = scrapeResult.context;
+    } else {
+      rawTransactions = scrapeResult;
+    }
+
+    if (rawTransactions.length === 0) {
       console.log('No transactions found');
       return { imported: 0, failed: 0, duplicates: 0 };
     }
 
+    // Filter out investment transactions that don't change account balance
+    const filteredCount = rawTransactions.length;
+    const wsTransactions = rawTransactions.filter(shouldIncludeTransaction);
+    const excludedCount = filteredCount - wsTransactions.length;
+
+    if (excludedCount > 0 && config.verbose) {
+      console.log(`Filtered out ${excludedCount} internal investment transactions`);
+    }
+
+    if (wsTransactions.length === 0) {
+      console.log('No transactions to import after filtering');
+      return { imported: 0, failed: 0, duplicates: 0 };
+    }
+
     if (config.verbose) {
-      console.log(`Found ${wsTransactions.length} transactions`);
+      console.log(`Found ${wsTransactions.length} transactions to process`);
     }
 
     // Get unique accounts
@@ -381,6 +414,71 @@ export async function importTransactions(options = {}) {
         return dateA - dateB;
       });
       console.log(formatTransactionsTable(sortedTransactions));
+    }
+
+    // Adjust balances if requested
+    if (!config.dryRun && options.adjustBalances && browserContext) {
+      try {
+        console.log('\nAdjusting account balances...');
+
+        // Scrape balances from WealthSimple home page
+        const wsBalances = await scrapeAccountBalancesV2(browserContext, config.verbose);
+
+        if (wsBalances.length === 0) {
+          console.log('No account balances found on WealthSimple home page');
+        } else {
+          // Adjust balances in ActualBudget
+          const adjustmentResults = await client.adjustAccountBalances(
+            wsBalances,
+            (accountName) => resolveAccount(accountName, fullConfig)
+          );
+
+          // Sync changes
+          await client.sync();
+
+          // Display adjustment results
+          console.log('\nBalance Adjustment Results:');
+          console.log(`  Adjusted: ${adjustmentResults.adjustments.length}`);
+          console.log(`  Skipped: ${adjustmentResults.skipped.length}`);
+          console.log(`  Errors: ${adjustmentResults.errors.length}`);
+
+          if (adjustmentResults.adjustments.length > 0 && config.verbose) {
+            console.log('\n  Adjustments made:');
+            adjustmentResults.adjustments.forEach((adj) => {
+              console.log(
+                `    ${adj.account}: ${adj.adjustment >= 0 ? '+' : ''}$${adj.adjustment.toFixed(2)}`
+              );
+            });
+          }
+
+          if (adjustmentResults.skipped.length > 0 && config.verbose) {
+            console.log('\n  Skipped accounts:');
+            adjustmentResults.skipped.forEach((skip) => {
+              console.log(`    ${skip.account}: ${skip.reason}`);
+            });
+          }
+
+          if (adjustmentResults.errors.length > 0) {
+            console.log('\n  Errors:');
+            adjustmentResults.errors.forEach((err) => {
+              console.log(`    ${err.account}: ${err.error}`);
+            });
+          }
+        }
+      } catch (error) {
+        console.error('\nError adjusting balances:', error.message);
+        if (config.verbose) {
+          console.error(error.stack);
+        }
+      } finally {
+        // Close browser context
+        if (browserContext) {
+          if (config.verbose) {
+            console.log('\nClosing browser...');
+          }
+          await browserContext.close();
+        }
+      }
     }
 
     return {

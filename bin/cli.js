@@ -48,6 +48,7 @@ program
   .option('--server-url <url>', 'ActualBudget server URL')
   .option('--password <password>', 'ActualBudget password')
   .option('--remote-browser-url <url>', 'Connect to existing browser via Chrome DevTools Protocol')
+  .option('--adjust-balances', 'Adjust account balances after import to match WealthSimple')
   .option('--dry-run', 'Preview import without making changes')
   .option('--verbose', 'Show detailed output')
   .action(async (options) => {

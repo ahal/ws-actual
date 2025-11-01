@@ -293,18 +293,30 @@ export class ActualClient {
           );
           console.log(`    Looking for: "${transaction._transferToAccount}"`);
         }
-        actualTransaction.payee_name = transaction.Payee || '';
+        // Only set payee_name if we have a valid payee value
+        if (transaction.Payee) {
+          actualTransaction.payee_name = transaction.Payee;
+        }
         actualTransaction.notes = transaction.Notes || '';
       }
     } else {
       // Regular transaction
-      actualTransaction.payee_name = transaction.Payee || '';
+      // Only set payee_name if we have a valid payee value
+      if (transaction.Payee) {
+        actualTransaction.payee_name = transaction.Payee;
+      }
       actualTransaction.notes = transaction.Notes || '';
     }
 
-    // Add optional fields
+    // Add optional fields - only add category if it's not null/undefined
+    // ActualBudget doesn't accept null for category, it should be omitted instead
     if (transaction.category) {
       actualTransaction.category = transaction.category;
+    }
+
+    // Ensure cleared is a boolean (ActualBudget might expect 0/1)
+    if (actualTransaction.cleared === undefined) {
+      actualTransaction.cleared = false;
     }
 
     return actualTransaction;
@@ -501,6 +513,123 @@ export class ActualClient {
     } catch (error) {
       throw new Error(`Failed to get categories: ${error.message}`);
     }
+  }
+
+  /**
+   * Get account balance from ActualBudget
+   * @param {string} accountId Account ID
+   * @returns {Promise<number>} Account balance in cents
+   */
+  async getAccountBalance(accountId) {
+    if (!this.connected) {
+      throw new Error('Not connected to ActualBudget');
+    }
+
+    try {
+      const result = await api.runQuery(
+        api.q('transactions')
+          .filter({ account: accountId })
+          .calculate({ $sum: '$amount' })
+      );
+      return result.data || 0;
+    } catch (error) {
+      throw new Error(`Failed to get account balance: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create balance adjustment transactions for accounts
+   * @param {Array} wsBalances WealthSimple account balances [{name, balance}]
+   * @param {Function} resolveAccount Function to resolve WealthSimple account name to ActualBudget account
+   * @returns {Promise<Object>} Adjustment results
+   */
+  async adjustAccountBalances(wsBalances, resolveAccount) {
+    if (!this.connected) {
+      throw new Error('Not connected to ActualBudget');
+    }
+
+    const adjustments = [];
+    const skipped = [];
+    const errors = [];
+
+    for (const wsBalance of wsBalances) {
+      try {
+        // Resolve WealthSimple account to ActualBudget account
+        const resolved = resolveAccount(wsBalance.name);
+        if (!resolved) {
+          skipped.push({
+            account: wsBalance.name,
+            reason: 'Not mapped to ActualBudget account'
+          });
+          continue;
+        }
+
+        // Get current ActualBudget balance
+        const actualBalanceCents = await this.getAccountBalance(resolved.accountId);
+        const actualBalance = actualBalanceCents / 100;
+
+        // Calculate difference
+        const difference = wsBalance.balance - actualBalance;
+
+        if (Math.abs(difference) < 0.01) {
+          // Balance is already accurate (within 1 cent)
+          if (this.config.verbose) {
+            console.log(
+              `  ${resolved.accountName}: Already balanced ($${actualBalance.toFixed(2)})`
+            );
+          }
+          continue;
+        }
+
+        // Create adjustment transaction
+        const adjustmentTransaction = {
+          Date: new Date().toISOString().split('T')[0], // Today's date
+          Account: wsBalance.name,
+          Payee: 'Balance Adjustment',
+          Notes: `Adjustment to match WealthSimple balance of $${wsBalance.balance.toFixed(2)}`,
+          Amount: Math.round(difference * 100), // Convert to cents
+          _accountId: resolved.accountId
+        };
+
+        // Import the adjustment transaction
+        const result = await this.importTransactions([adjustmentTransaction], null);
+
+        if (result.imported.length > 0) {
+          adjustments.push({
+            account: resolved.accountName,
+            wsBalance: wsBalance.balance,
+            actualBalance: actualBalance,
+            adjustment: difference,
+            transactionId: result.imported[0].actualId
+          });
+
+          if (this.config.verbose) {
+            console.log(
+              `  ${resolved.accountName}: Adjusted by $${difference.toFixed(2)} (was $${actualBalance.toFixed(2)}, now $${wsBalance.balance.toFixed(2)})`
+            );
+          }
+        } else {
+          errors.push({
+            account: wsBalance.name,
+            error: 'Failed to create adjustment transaction'
+          });
+        }
+      } catch (error) {
+        errors.push({
+          account: wsBalance.name,
+          error: error.message
+        });
+        if (this.config.verbose) {
+          console.error(`  Error adjusting ${wsBalance.name}:`, error.message);
+        }
+      }
+    }
+
+    return {
+      adjustments,
+      skipped,
+      errors
+    };
   }
 
   /**

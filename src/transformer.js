@@ -3,6 +3,29 @@
  */
 
 /**
+ * Check if a transaction should be included in the import
+ * Filters out internal investment transactions that don't change the account balance
+ * @param {Object} transaction WealthSimple transaction
+ * @returns {boolean} True if transaction should be included
+ */
+export function shouldIncludeTransaction(transaction) {
+  // List of transaction types that don't change the overall account balance
+  // These are internal investment operations (buying/selling stocks, reinvesting dividends, currency conversions)
+  const excludedTypes = [
+    'market sell',
+    'market buy',
+    'fractional buy',
+    'dividend reinvested',
+    'funds converted'
+  ];
+
+  const type = (transaction.type || '').toLowerCase();
+
+  // Exclude if type matches any of the excluded types
+  return !excludedTypes.includes(type);
+}
+
+/**
  * Transform a single WealthSimple transaction to ActualBudget format
  * @param {Object} wsTransaction WealthSimple transaction
  * @param {Object} options Transform options
@@ -92,7 +115,18 @@ export function transformTransaction(wsTransaction, options = {}) {
  * @returns {Array} ActualBudget transactions
  */
 export function transformTransactions(wsTransactions, options = {}) {
-  return wsTransactions.map((transaction) => transformTransaction(transaction, options));
+  return wsTransactions
+    .map((transaction) => transformTransaction(transaction, options))
+    .filter((transaction) => {
+      // Skip transactions with invalid amounts
+      if (!Number.isFinite(transaction.Amount)) {
+        console.warn(
+          `Skipping transaction with invalid amount (${transaction.Amount}): ${transaction.Payee}`
+        );
+        return false;
+      }
+      return true;
+    });
 }
 
 /**
@@ -441,6 +475,7 @@ export function validateTransaction(transaction) {
 }
 
 export default {
+  shouldIncludeTransaction,
   transformTransaction,
   transformTransactions,
   groupByAccount,

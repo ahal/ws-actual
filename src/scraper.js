@@ -185,15 +185,301 @@ async function getBrowserInfo() {
 }
 
 /**
+ * Extract account balances from the WealthSimple home page
+ * @param {Object} context - Browser context (from Playwright)
+ * @param {boolean} verbose - Log detailed progress
+ * @returns {Promise<Array>} - Array of account balances {name, balance}
+ */
+export async function scrapeAccountBalances(context, verbose = false) {
+  const pages = context.pages();
+  const page = pages.length > 0 ? pages[0] : await context.newPage();
+
+  try {
+    if (verbose) {
+      console.log('\nNavigating to WealthSimple home page to fetch balances...');
+    }
+
+    await page.goto('https://my.wealthsimple.com/app/home', {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+
+    // Wait for accounts to load
+    await wait(3000);
+
+    // Extract account balances from the page
+    const balances = await page.evaluate(() => {
+      /* eslint-disable no-undef */
+      const accounts = [];
+      const processedElements = new Set();
+
+      // Account name patterns to search for
+      // Order matters - more specific patterns first
+      const accountNamePatterns = [
+        { pattern: /Spousal\s+RRSP/i, name: 'Spousal RRSP' },
+        { pattern: /Joint\s+RESP/i, name: 'Joint RESP' },
+        { pattern: /Joint.*Chequing|Chequing.*Joint/i, name: 'Joint' },
+        { pattern: /Solo|Chequing.*Solo/i, name: 'Solo' },
+        { pattern: /^TFSA(?:\s|$)/i, name: 'TFSA' },
+        { pattern: /^RRSP(?:\s|$)/i, name: 'RRSP' },
+        { pattern: /^FHSA(?:\s|$)/i, name: 'FHSA' },
+        { pattern: /^Cash(?:\s|$)/i, name: 'Cash' },
+        { pattern: /Personal.*Investment/i, name: 'Personal Investment' },
+        { pattern: /Non-registered/i, name: 'Non-registered' },
+        { pattern: /Chequing/i, name: 'Chequing' },
+        { pattern: /Savings/i, name: 'Savings' }
+      ];
+
+      // Helper to extract clean account name
+      function extractAccountName(text, matchedPattern) {
+        // Try to extract just the account type from potentially longer text
+        const cleanText = text.trim();
+
+        // Remove common noise patterns
+        let name = cleanText
+          .replace(/\$[\d,]+\.?\d{0,2}/g, '') // Remove dollar amounts
+          .replace(/[+−-]\d+\.?\d*%/g, '') // Remove percentages
+          .replace(/\d+\s+accounts?/gi, '') // Remove "2 accounts" type text
+          .replace(/all\s+time/gi, '') // Remove "all time"
+          .trim();
+
+        // If we have multiple lines, take the first substantial one
+        const lines = name.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length > 0) {
+          name = lines[0];
+        }
+
+        // If name is still messy or too long, extract just the pattern
+        if (name.length > 50 || /[\$\d]{5,}/.test(name)) {
+          const match = cleanText.match(matchedPattern.pattern);
+          if (match) {
+            return matchedPattern.name;
+          }
+        }
+
+        // Final cleanup - if name still contains the account type pattern, use just that
+        if (matchedPattern.pattern.test(name)) {
+          // Extract just the account type word
+          const typeMatch = name.match(matchedPattern.pattern);
+          if (typeMatch && typeMatch[0]) {
+            // For patterns like "TFSA", "RRSP", return just that
+            // For patterns like "Chequing", include any descriptive words before it
+            const beforePattern = name.substring(0, name.indexOf(typeMatch[0])).trim();
+            if (beforePattern && beforePattern.split(/\s+/).length <= 2) {
+              return `${beforePattern} ${typeMatch[0]}`.trim();
+            }
+            return typeMatch[0].trim();
+          }
+        }
+
+        return name;
+      }
+
+      // Helper to find balance in element tree
+      function findBalanceInTree(element, maxDepth = 4) {
+        const visited = new Set();
+        const toCheck = [{ el: element, depth: 0 }];
+
+        while (toCheck.length > 0) {
+          const { el, depth } = toCheck.shift();
+
+          if (!el || visited.has(el) || depth > maxDepth) {
+continue;
+}
+          visited.add(el);
+
+          const text = el.textContent || '';
+
+          // Look for dollar amounts - match multiple to find the largest (likely the total)
+          const dollarMatches = text.match(/\$[\d,]+\.?\d{0,2}/g);
+          if (dollarMatches && el.children.length < 10) {
+            // Parse all amounts and use the largest one (usually the total balance)
+            const amounts = dollarMatches
+              .map(match => {
+                const cleaned = match.replace(/[$,]/g, '');
+                return parseFloat(cleaned);
+              })
+              .filter(amt => !isNaN(amt) && amt > 0);
+
+            if (amounts.length > 0) {
+              // Return the largest amount (usually the main balance, not available balance)
+              return Math.max(...amounts);
+            }
+          }
+
+          // Check parent and siblings
+          if (el.parentElement && depth < maxDepth) {
+            toCheck.push({ el: el.parentElement, depth: depth + 1 });
+            const siblings = Array.from(el.parentElement.children);
+            siblings.forEach(sibling => {
+              if (sibling !== el) {
+                toCheck.push({ el: sibling, depth: depth + 1 });
+              }
+            });
+          }
+        }
+
+        return null;
+      }
+
+      // Strategy 1: Look for elements with account name patterns
+      const allElements = document.querySelectorAll('*');
+
+      for (const element of allElements) {
+        if (processedElements.has(element)) {
+continue;
+}
+
+        const elementText = element.textContent || '';
+
+        // Check each account pattern
+        for (const accountPattern of accountNamePatterns) {
+          if (!accountPattern.pattern.test(elementText)) {
+continue;
+}
+
+          // Found potential account name element
+          const accountName = extractAccountName(elementText, accountPattern);
+
+          // Skip if this text is too long (likely contains more than just account name)
+          if (accountName.length > 100) {
+continue;
+}
+
+          // Try to find balance near this element
+          const balance = findBalanceInTree(element);
+
+          if (balance !== null && balance > 0) {
+            // Check for duplicates
+            const isDuplicate = accounts.some(
+              acc => acc.name === accountName && Math.abs(acc.balance - balance) < 0.01
+            );
+
+            if (!isDuplicate) {
+              accounts.push({ name: accountName, balance });
+              processedElements.add(element);
+            }
+            break; // Found balance for this element, move to next
+          }
+        }
+      }
+
+      // Strategy 2: Look for data-testid or other semantic attributes
+      const semanticSelectors = [
+        '[data-testid*="account"]',
+        '[data-testid*="balance"]',
+        '[aria-label*="account"]',
+        'section[class*="account" i]',
+        'div[class*="account-card" i]'
+      ];
+
+      for (const selector of semanticSelectors) {
+        try {
+          const elements = document.querySelectorAll(selector);
+          for (const element of elements) {
+            const text = element.textContent || '';
+
+            // Check if contains account name
+            for (const accountPattern of accountNamePatterns) {
+              if (!accountPattern.pattern.test(text)) {
+continue;
+}
+
+              const accountName = extractAccountName(text, accountPattern);
+              const balance = findBalanceInTree(element, 2);
+
+              if (balance !== null && balance > 0) {
+                const isDuplicate = accounts.some(
+                  acc => acc.name === accountName && Math.abs(acc.balance - balance) < 0.01
+                );
+
+                if (!isDuplicate) {
+                  accounts.push({ name: accountName, balance });
+                }
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          // Invalid selector, skip
+        }
+      }
+
+      // Deduplicate accounts - keep only the highest balance for each unique account name
+      const accountMap = new Map();
+      accounts.forEach(acc => {
+        // Skip invalid account names
+        if (!acc.name || acc.name.length < 2 || acc.name.length > 50) {
+          return;
+        }
+
+        // Skip names that look like HTML/CSS (contain < or >)
+        if (acc.name.includes('<') || acc.name.includes('>') || acc.name.includes('style=')) {
+          return;
+        }
+
+        // Skip names with concatenated account types (e.g., "RRSPRRSP", "ChequingSoloJoint")
+        const accountTypeCount = ['TFSA', 'RRSP', 'Chequing', 'Solo', 'Joint', 'RESP', 'Spousal'].filter(
+          type => {
+            const regex = new RegExp(type, 'gi');
+            const matches = acc.name.match(regex);
+            return matches && matches.length > 0;
+          }
+        ).length;
+        if (accountTypeCount > 2) { // Allow 2 for "Joint RESP", "Spousal RRSP"
+          return;
+        }
+
+        // Skip names that are just numbers or have too many numbers
+        if (/^\d+$/.test(acc.name) || (acc.name.match(/\d/g) || []).length > 5) {
+          return;
+        }
+
+        // Normalize account name for comparison
+        const normalizedName = acc.name.trim().toLowerCase();
+
+        // If we've seen this account before, keep the one with the larger balance
+        if (accountMap.has(normalizedName)) {
+          const existing = accountMap.get(normalizedName);
+          if (acc.balance > existing.balance) {
+            accountMap.set(normalizedName, acc);
+          }
+        } else {
+          accountMap.set(normalizedName, acc);
+        }
+      });
+
+      // Convert back to array
+      const uniqueAccounts = Array.from(accountMap.values());
+
+      return uniqueAccounts;
+    });
+
+    if (verbose) {
+      console.log(`Found ${balances.length} account balances:`);
+      balances.forEach((acc) => {
+        console.log(`  ${acc.name}: $${acc.balance.toFixed(2)}`);
+      });
+    }
+
+    return balances;
+  } catch (error) {
+    console.error('Error scraping account balances:', error.message);
+    return [];
+  }
+}
+
+/**
  * Extract all transactions from the WealthSimple activity page
  * @param {Object} options - Scraper options
  * @param {boolean} options.verbose - Log detailed progress
  * @param {string} options.remoteBrowserUrl - Chrome DevTools Protocol URL for remote browser connection
- * @returns {Promise<Array>} - Array of parsed transactions
+ * @param {boolean} options.keepContextOpen - Keep browser context open after scraping (for balance adjustment)
+ * @returns {Promise<Array|Object>} - Array of parsed transactions, or {transactions, context} if keepContextOpen is true
  */
-export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = null }) {
+export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = null, keepContextOpen = false }) {
   let context;
-  let shouldCloseContext = true;
+  let shouldCloseContext = !keepContextOpen;
 
   if (remoteBrowserUrl) {
     // Connect to remote browser via Chrome DevTools Protocol
@@ -384,6 +670,9 @@ export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = n
       console.log(`Successfully parsed ${transactions.length} transactions`);
     }
 
+    if (keepContextOpen) {
+      return { transactions, context };
+    }
     return transactions;
   } finally {
     if (shouldCloseContext) {
@@ -392,7 +681,7 @@ export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = n
       }
       await context.close();
     } else if (verbose) {
-      console.log('\nLeaving remote browser open...');
+      console.log('\nLeaving browser context open...');
     }
   }
 }
