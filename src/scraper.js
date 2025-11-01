@@ -5,6 +5,14 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function countTransactionHeaders(page) {
+  return page.evaluate(() => {
+    /* eslint-disable no-undef */
+    const buttons = document.querySelectorAll('button[role="button"][id$="-header"]');
+    return buttons.length;
+  });
+}
+
 async function expandTransactions(page, verbose = false) {
   const expandedCount = await page.evaluate(() => {
     /* eslint-disable no-undef */
@@ -57,17 +65,7 @@ async function loadAllTransactions(page, verbose = false) {
     await wait(1000); // Wait for button to appear after scroll
 
     // Count transactions before clicking
-    const transactionCountBefore = await page.evaluate(() => {
-      /* eslint-disable no-undef */
-      const buttons = document.querySelectorAll('button[role="button"]');
-      let count = 0;
-      buttons.forEach((button) => {
-        if (button.id && button.id.endsWith('-header')) {
-          count++;
-        }
-      });
-      return count;
-    });
+    const transactionCountBefore = await countTransactionHeaders(page);
 
     const buttonClicked = await page.evaluate(() => {
       /* eslint-disable no-undef */
@@ -99,17 +97,7 @@ async function loadAllTransactions(page, verbose = false) {
     for (let i = 0; i < 20; i++) {
       await wait(500);
 
-      const transactionCountAfter = await page.evaluate(() => {
-        /* eslint-disable no-undef */
-        const buttons = document.querySelectorAll('button[role="button"]');
-        let count = 0;
-        buttons.forEach((button) => {
-          if (button.id && button.id.endsWith('-header')) {
-            count++;
-          }
-        });
-        return count;
-      });
+      const transactionCountAfter = await countTransactionHeaders(page);
 
       if (transactionCountAfter > transactionCountBefore) {
         newTransactionsLoaded = true;

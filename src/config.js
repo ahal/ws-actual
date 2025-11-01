@@ -121,38 +121,23 @@ export function resolveAccount(wsAccountName, config) {
 
     const pattern = account.wsAccountName;
 
-    // Detect if pattern contains regex special characters
-    const regexChars = /[.*+?^${}()|[\]\\]/;
-    const isRegex = regexChars.test(pattern);
-
-    if (isRegex) {
-      // Try regex match
-      try {
-        const regex = new RegExp(`^${pattern}$`, 'i');
-        if (regex.test(wsAccountName)) {
-          return {
-            accountId: account.actualAccountId,
-            accountName: wsAccountName,
-            needsLookup: false,
-            matchType: 'regex',
-            matchedPattern: pattern
-          };
-        }
-      } catch (error) {
-        // Invalid regex pattern, skip
-        continue;
-      }
-    } else {
-      // Exact match (case-insensitive)
-      if (pattern.toLowerCase() === wsAccountName.toLowerCase()) {
+    // Try regex match first (works for both regex patterns and exact matches)
+    try {
+      const regex = new RegExp(`^${pattern}$`, 'i');
+      if (regex.test(wsAccountName)) {
+        // Determine if it was a regex or exact match
+        const matchType = /[.*+?^${}()|[\]\\]/.test(pattern) ? 'regex' : 'exact';
         return {
           accountId: account.actualAccountId,
           accountName: wsAccountName,
           needsLookup: false,
-          matchType: 'exact',
+          matchType,
           matchedPattern: pattern
         };
       }
+    } catch {
+      // Invalid regex pattern, skip
+      continue;
     }
   }
 

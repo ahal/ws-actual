@@ -328,18 +328,8 @@ export async function importTransactions(options = {}) {
             );
             if (targetAccountResolved) {
               // Preserve transfer metadata with resolved account ID
-              Object.defineProperty(processedTransaction, '_isTransfer', {
-                value: transaction._isTransfer,
-                writable: false,
-                enumerable: false,
-                configurable: false
-              });
-              Object.defineProperty(processedTransaction, '_transferToAccount', {
-                value: targetAccountResolved.accountId,
-                writable: false,
-                enumerable: false,
-                configurable: false
-              });
+              processedTransaction._isTransfer = transaction._isTransfer;
+              processedTransaction._transferToAccount = targetAccountResolved.accountId;
               if (config.verbose) {
                 console.log(
                   `  Transfer detected: ${accountInfo.accountName} → ${targetAccountResolved.accountName}`

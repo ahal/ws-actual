@@ -90,19 +90,8 @@ export function transformTransaction(wsTransaction, options = {}) {
 
   // Add transfer metadata if this is a transfer
   if (actualTransferInfo.isTransfer) {
-    Object.defineProperty(transformed, '_isTransfer', {
-      value: true,
-      writable: false,
-      enumerable: false,
-      configurable: false
-    });
-
-    Object.defineProperty(transformed, '_transferToAccount', {
-      value: actualTransferInfo.toAccount,
-      writable: false,
-      enumerable: false,
-      configurable: false
-    });
+    transformed._isTransfer = true;
+    transformed._transferToAccount = actualTransferInfo.toAccount;
   }
 
   return transformed;

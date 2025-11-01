@@ -399,7 +399,7 @@ describe('Transformer Validation and Statistics Tests', () => {
   });
 
   describe('Transfer Validation', () => {
-    it('should preserve transfer metadata as non-enumerable', () => {
+    it('should preserve transfer metadata', () => {
       const wsTransaction = {
         ...validTransactions.transferBetweenAccounts
       };
@@ -410,14 +410,13 @@ describe('Transformer Validation and Statistics Tests', () => {
 
       const result = transformTransaction(wsTransaction, { isAccountMapped });
 
-      // Transfer metadata should exist but not be enumerable
+      // Transfer metadata should exist
       assert.strictEqual(result._isTransfer, true);
       assert.strictEqual(result._transferToAccount, 'Savings Account');
 
-      // Should not appear in Object.keys()
-      const keys = Object.keys(result);
-      assert.ok(!keys.includes('_isTransfer'));
-      assert.ok(!keys.includes('_transferToAccount'));
+      // Underscore prefix indicates these are internal metadata
+      assert.ok(result.hasOwnProperty('_isTransfer'));
+      assert.ok(result.hasOwnProperty('_transferToAccount'));
     });
 
     it('should validate transfers have required fields', () => {

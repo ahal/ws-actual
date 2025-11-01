@@ -41,46 +41,46 @@ export class ActualClient {
   }
 
   /**
+   * Internal helper to connect to API
+   * @param {string} dataDir - Data directory path
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _connectToApi(dataDir) {
+    if (this.config.verbose) {
+      console.log(`Downloading budget: ${this.config.budgetId}`);
+    }
+
+    await api.init({
+      dataDir,
+      serverURL: this.config.serverUrl,
+      password: this.config.password
+    });
+
+    await api.downloadBudget(this.config.budgetId);
+    this.connected = true;
+    await this.loadAccounts();
+    await this.loadPayees();
+  }
+
+  /**
    * Initialize and connect to ActualBudget
    * @returns {Promise<void>}
    */
   async connect() {
     const dataDir = this.config.dataDir || getDataDir();
+    await mkdir(dataDir, { recursive: true });
+
+    if (this.config.verbose) {
+      console.log(`Connecting to ActualBudget server at: ${this.config.serverUrl}`);
+      console.log(`Using data directory: ${dataDir}`);
+    }
 
     try {
-      // Ensure data directory exists
-      await mkdir(dataDir, { recursive: true });
-
-      // Log connection attempt for debugging
-      if (this.config.verbose) {
-        console.log(`Connecting to ActualBudget server at: ${this.config.serverUrl}`);
-        console.log(`Using data directory: ${dataDir}`);
-      }
-
-      await api.init({
-        dataDir: dataDir,
-        serverURL: this.config.serverUrl,
-        password: this.config.password
-      });
-
-      if (this.config.verbose) {
-        console.log(`Downloading budget: ${this.config.budgetId}`);
-      }
-
-      await api.downloadBudget(this.config.budgetId);
-      this.connected = true;
-
-      // Load accounts and payees
-      await this.loadAccounts();
-      await this.loadPayees();
+      await this._connectToApi(dataDir);
     } catch (error) {
-      const errorString = `${error.toString()} ${error.stack || ''}`;
-      const isDatabaseError =
-        errorString.includes('out-of-sync') ||
-        errorString.includes('Database is out of sync') ||
-        errorString.includes('checkDatabaseValidity');
-
-      if (isDatabaseError) {
+      // Single retry on database errors
+      if (error.message.includes('out-of-sync') || error.message.includes('Database')) {
         if (this.config.verbose) {
           console.log('Database error detected. Clearing cache and retrying...');
         }
@@ -92,25 +92,14 @@ export class ActualClient {
         }
         await this.clearCache();
         await mkdir(dataDir, { recursive: true });
-
-        await api.init({
-          dataDir: dataDir,
-          serverURL: this.config.serverUrl,
-          password: this.config.password
-        });
-
-        await api.downloadBudget(this.config.budgetId);
-        this.connected = true;
-        await this.loadAccounts();
-        await this.loadPayees();
+        await this._connectToApi(dataDir);
 
         if (this.config.verbose) {
           console.log('✅ Connection successful after cache clear');
         }
-        return;
+      } else {
+        throw new Error(`Failed to connect to ActualBudget: ${error.message}`);
       }
-
-      throw new Error(`Failed to connect to ActualBudget: ${error.message}`);
     }
   }
 
