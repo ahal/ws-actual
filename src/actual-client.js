@@ -6,6 +6,35 @@ import { existsSync } from 'fs';
 import { createHash } from 'crypto';
 
 /**
+ * Suppress all console output during async operation
+ * @param {Function} fn - Async function to execute with suppressed console
+ * @returns {Promise<any>} Result of the function
+ */
+async function suppressConsole(fn) {
+  const originalLog = console.log;
+  const originalInfo = console.info;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const originalDebug = console.debug;
+
+  console.log = () => {};
+  console.info = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+  console.debug = () => {};
+
+  try {
+    return await fn();
+  } finally {
+    console.log = originalLog;
+    console.info = originalInfo;
+    console.warn = originalWarn;
+    console.error = originalError;
+    console.debug = originalDebug;
+  }
+}
+
+/**
  * Get the data directory path using XDG specification
  * @returns {string} Data directory path
  */
@@ -51,13 +80,27 @@ export class ActualClient {
       console.log(`Downloading budget: ${this.config.budgetId}`);
     }
 
-    await api.init({
-      dataDir,
-      serverURL: this.config.serverUrl,
-      password: this.config.password
-    });
+    // Suppress console logs from the API library if not in verbose mode
+    if (!this.config.verbose) {
+      await suppressConsole(async () => {
+        await api.init({
+          dataDir,
+          serverURL: this.config.serverUrl,
+          password: this.config.password
+        });
 
-    await api.downloadBudget(this.config.budgetId);
+        await api.downloadBudget(this.config.budgetId);
+      });
+    } else {
+      await api.init({
+        dataDir,
+        serverURL: this.config.serverUrl,
+        password: this.config.password
+      });
+
+      await api.downloadBudget(this.config.budgetId);
+    }
+
     this.connected = true;
     await this.loadAccounts();
     await this.loadPayees();
@@ -631,7 +674,14 @@ export class ActualClient {
     }
 
     try {
-      await api.sync();
+      // Suppress console logs from the API library if not in verbose mode
+      if (!this.config.verbose) {
+        await suppressConsole(async () => {
+          await api.sync();
+        });
+      } else {
+        await api.sync();
+      }
     } catch (error) {
       throw new Error(`Failed to sync: ${error.message}`);
     }

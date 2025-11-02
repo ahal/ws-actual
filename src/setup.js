@@ -10,6 +10,35 @@ import { getUniqueAccounts, promptForAccountMapping } from './account-mapper.js'
 import { createClient } from './actual-client.js';
 
 /**
+ * Suppress all console output during async operation
+ * @param {Function} fn - Async function to execute with suppressed console
+ * @returns {Promise<any>} Result of the function
+ */
+async function suppressConsole(fn) {
+  const originalLog = console.log;
+  const originalInfo = console.info;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const originalDebug = console.debug;
+
+  console.log = () => {};
+  console.info = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+  console.debug = () => {};
+
+  try {
+    return await fn();
+  } finally {
+    console.log = originalLog;
+    console.info = originalInfo;
+    console.warn = originalWarn;
+    console.error = originalError;
+    console.debug = originalDebug;
+  }
+}
+
+/**
  * Setup wizard - combines login and account mapping
  * @param {Object} options CLI options
  * @returns {Promise<void>}
@@ -100,15 +129,33 @@ export async function setup(options = {}) {
     // Ensure data directory exists
     await mkdir(dataDir, { recursive: true });
 
-    await api.init({
-      dataDir: dataDir,
-      serverURL: serverUrl,
-      password: password
-    });
+    // Suppress console logs from API if not in verbose mode
+    if (!options.verbose) {
+      await suppressConsole(async () => {
+        await api.init({
+          dataDir: dataDir,
+          serverURL: serverUrl,
+          password: password
+        });
+      });
+    } else {
+      await api.init({
+        dataDir: dataDir,
+        serverURL: serverUrl,
+        password: password
+      });
+    }
 
     // Get available budgets
     console.log('Fetching available budgets...');
-    const allBudgets = await api.getBudgets();
+    let allBudgets;
+    if (!options.verbose) {
+      allBudgets = await suppressConsole(async () => {
+        return await api.getBudgets();
+      });
+    } else {
+      allBudgets = await api.getBudgets();
+    }
 
     if (!allBudgets || allBudgets.length === 0) {
       throw new Error('No budgets found on the server');
@@ -254,7 +301,8 @@ export async function setup(options = {}) {
     const client = await createClient({
       serverUrl: serverUrl,
       password: password,
-      budgetId: selectedSyncId
+      budgetId: selectedSyncId,
+      verbose: options.verbose
     });
 
     try {
