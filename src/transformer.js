@@ -62,18 +62,19 @@ export function transformTransaction(wsTransaction, options = {}) {
   const isDebit = isDebitTransaction(wsTransaction);
   const finalAmount = isDebit ? -Math.abs(amountInCents) : Math.abs(amountInCents);
 
-  // Build notes field per CLAUDE.md specification
-  let notes = buildNotesFromSpec(wsTransaction);
-
   // Check if this is a transfer transaction
   const transferInfo = detectTransfer(wsTransaction, options.isAccountMapped);
 
   // Check if transfer info was pre-stored (for moved transactions)
   const actualTransferInfo = wsTransaction._transferInfo || transferInfo;
 
-  // Add transfer information to notes if this is a transfer
+  // Build notes field per CLAUDE.md specification
+  let notes;
   if (actualTransferInfo.isTransfer && wsTransaction.from && wsTransaction.to) {
-    notes += `: from ${wsTransaction.from}, to ${wsTransaction.to}`;
+    // For transfers, use simple arrow format: "from account -> to account"
+    notes = `${wsTransaction.from} -> ${wsTransaction.to}`;
+  } else {
+    notes = buildNotesFromSpec(wsTransaction);
   }
 
   // Build payee name from description
@@ -191,21 +192,29 @@ function isDebitTransaction(transaction) {
 }
 
 function buildNotesFromSpec(transaction) {
-  const parts = [];
+  // Build the main part: subheading and/or type
+  let mainPart = '';
+  const subheading = transaction.subheading?.trim();
+  const type = transaction.type?.trim();
 
-  if (transaction.type?.trim()) {
-    parts.push(transaction.type.trim());
+  if (subheading && type && subheading !== type) {
+    // Both present and different: "Questrade - Full transfer in-kind"
+    mainPart = `${subheading} - ${type}`;
+  } else if (subheading) {
+    // Only subheading (or subheading same as type)
+    mainPart = subheading;
+  } else if (type) {
+    // Only type
+    mainPart = type;
   }
-  if (transaction.description?.trim()) {
-    parts.push(transaction.description.trim());
-  }
+
+  // Add email in parentheses if present
   if (transaction.email?.trim()) {
-    parts.push(`(${transaction.email.trim()})`);
+    mainPart += ` (${transaction.email.trim()})`;
   }
 
-  const prefix = parts.join(' ');
+  // Build suffix with message, quantity, and transaction ID
   const suffixParts = [];
-
   const hasMessage = !!transaction.message?.trim();
   const hasQuantity = !!transaction.filledQuantity?.trim();
 
@@ -221,14 +230,14 @@ function buildNotesFromSpec(transaction) {
 
   const suffix = suffixParts.join(' ');
 
-  // Only add colon if there's a message or quantity (not just transaction ID)
+  // Combine main part and suffix
   if (!suffix) {
-    return prefix;
+    return mainPart;
   }
   if (hasMessage || hasQuantity) {
-    return `${prefix}: ${suffix}`;
+    return `${mainPart}: ${suffix}`;
   }
-  return `${prefix} ${suffix}`;
+  return `${mainPart} ${suffix}`;
 }
 
 /**

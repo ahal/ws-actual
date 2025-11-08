@@ -39,6 +39,196 @@ async function suppressConsole(fn) {
 }
 
 /**
+ * Perform account mapping
+ * @param {Object} options - Options
+ * @param {boolean} options.mapAllAccounts - Map all accounts (true) or only unmapped (false)
+ * @param {boolean} options.verbose - Verbose output
+ * @param {string} options.remoteBrowserUrl - Remote browser URL
+ * @param {string} options.config - Config file path
+ * @param {Object} rl - Readline interface
+ * @returns {Promise<void>}
+ */
+async function performAccountMapping(options, rl) {
+  const { mapAllAccounts, verbose, remoteBrowserUrl, config: configPath } = options;
+
+  // Load existing config
+  const fullConfig = await loadConfig(configPath);
+
+  if (!fullConfig.actualServer?.url || !fullConfig.actualServer?.syncId) {
+    throw new Error(
+      'ActualBudget is not configured. Please run "ws-actual setup" first to configure your server and budget.'
+    );
+  }
+
+  const serverUrl = fullConfig.actualServer.url;
+  const selectedSyncId = fullConfig.actualServer.syncId;
+
+  // Get password
+  const password = await getStoredPassword(serverUrl);
+  if (!password) {
+    throw new Error(
+      `No password found for ${serverUrl}. Please run "ws-actual setup" to store your password.`
+    );
+  }
+
+  // Scrape WealthSimple to get account names
+  console.log('📊 Extracting account information from WealthSimple...');
+  console.log('(This will launch a browser window for authentication)\n');
+
+  let wsTransactions;
+  try {
+    if (remoteBrowserUrl) {
+      console.log('Connecting to remote browser...');
+    } else {
+      console.log('Launching browser...');
+    }
+
+    wsTransactions = await scrapeTransactions({
+      verbose,
+      remoteBrowserUrl
+    });
+
+    if (wsTransactions.length === 0) {
+      console.log('\n⚠️  No transactions found. Cannot determine account names.');
+      console.log('You may need to manually configure account mappings in config.toml.');
+      return;
+    }
+
+    console.log(`✅ Found ${wsTransactions.length} transactions\n`);
+  } catch (error) {
+    console.error('\n❌ Failed to extract account information:', error.message);
+    console.log('You can still use ws-actual by manually configuring account mappings in config.toml.');
+    throw error;
+  }
+
+  // Get unique accounts from transactions
+  const allUniqueAccounts = getUniqueAccounts(wsTransactions);
+
+  // Filter accounts based on user choice
+  let accountsToMap;
+  if (mapAllAccounts) {
+    // Map all accounts
+    accountsToMap = allUniqueAccounts;
+    console.log(`📋 Detected ${allUniqueAccounts.length} WealthSimple account(s):\n`);
+    accountsToMap.forEach((account, index) => {
+      console.log(`  ${index + 1}. ${account}`);
+    });
+  } else {
+    // Only map unmapped accounts
+    const existingMappings = fullConfig.accounts || [];
+    const mappedAccountNames = new Set(existingMappings.map((acc) => acc.wsAccountName));
+    accountsToMap = allUniqueAccounts.filter((acc) => !mappedAccountNames.has(acc));
+
+    const alreadyMappedCount = allUniqueAccounts.length - accountsToMap.length;
+
+    console.log(`📋 Detected ${allUniqueAccounts.length} WealthSimple account(s)`);
+    console.log(`   ${alreadyMappedCount} already mapped, ${accountsToMap.length} unmapped:\n`);
+
+    if (alreadyMappedCount > 0) {
+      console.log('Already mapped:');
+      allUniqueAccounts
+        .filter((acc) => mappedAccountNames.has(acc))
+        .forEach((account) => {
+          console.log(`  ✓ ${account}`);
+        });
+      console.log('');
+    }
+
+    if (accountsToMap.length > 0) {
+      console.log('Unmapped accounts:');
+      accountsToMap.forEach((account, index) => {
+        console.log(`  ${index + 1}. ${account}`);
+      });
+    }
+  }
+
+  // If no accounts to map, we're done
+  if (accountsToMap.length === 0) {
+    console.log('\n✅ All accounts are already mapped!');
+    console.log('\n🎉 You can now import transactions with:');
+    console.log('   ws-actual import');
+    return;
+  }
+
+  // Connect to ActualBudget to map accounts
+  console.log('\n🔗 Connecting to ActualBudget for account mapping...');
+  const client = await createClient({
+    serverUrl: serverUrl,
+    password: password,
+    budgetId: selectedSyncId,
+    verbose: verbose
+  });
+
+  try {
+    console.log('✅ Connected\n');
+
+    // Prompt for mapping each account
+    let mappedCount = 0;
+    for (const wsAccount of accountsToMap) {
+      console.log(`\n🏦 WealthSimple Account: "${wsAccount}"`);
+
+      const resolvedMapping = await promptForAccountMapping(wsAccount, client, fullConfig, rl);
+
+      if (resolvedMapping) {
+        mappedCount++;
+      }
+    }
+
+    // Summary
+    console.log('\n\n✨ Complete!\n');
+    console.log('─'.repeat(50));
+    console.log('\n📊 Summary:');
+
+    const totalMappedAccounts = (fullConfig.accounts || []).length;
+    console.log(`   Total accounts mapped: ${totalMappedAccounts}`);
+    console.log(`   Accounts mapped in this session: ${mappedCount}`);
+
+    const unmappedCount = allUniqueAccounts.length - totalMappedAccounts;
+    if (unmappedCount > 0) {
+      console.log(`\n⚠️  ${unmappedCount} account(s) are still unmapped.`);
+      console.log('   Transactions from unmapped accounts will be skipped during import.');
+    }
+
+    console.log('\n🎉 You can now import transactions with:');
+    console.log('   ws-actual import');
+  } finally {
+    await client.shutdown();
+  }
+}
+
+/**
+ * Setup accounts only - skip ActualBudget configuration
+ * @param {Object} options CLI options
+ * @returns {Promise<void>}
+ */
+export async function setupAccounts(options = {}) {
+  const rl = createReadlineInterface();
+
+  try {
+    console.log('🚀 WealthSimple Account Mapping\n');
+    console.log(`${'─'.repeat(50)}\n`);
+
+    await performAccountMapping(
+      {
+        mapAllAccounts: options.all || false,
+        verbose: options.verbose || false,
+        remoteBrowserUrl: options.remoteBrowserUrl,
+        config: options.config
+      },
+      rl
+    );
+  } catch (error) {
+    console.error('\n❌ Account mapping failed:', error.message);
+    if (options.verbose) {
+      console.error(error.stack);
+    }
+    throw error;
+  } finally {
+    rl.close();
+  }
+}
+
+/**
  * Setup wizard - combines login and account mapping
  * @param {Object} options CLI options
  * @returns {Promise<void>}
@@ -244,10 +434,12 @@ export async function setup(options = {}) {
 
     const shouldMapAccounts = await askQuestion(
       rl,
-      'Would you like to automatically map WealthSimple accounts to ActualBudget accounts? (Y/n): '
+      'Would you like to automatically map WealthSimple accounts to ActualBudget accounts? (Y/n/all): '
     );
 
-    if (shouldMapAccounts.toLowerCase() === 'n' || shouldMapAccounts.toLowerCase() === 'no') {
+    const response = shouldMapAccounts.toLowerCase().trim();
+
+    if (response === 'n' || response === 'no') {
       console.log('\n⏭️  Skipping automatic account mapping.');
       console.log('\nSetup complete! You can now import transactions with:');
       console.log('  ws-actual import');
@@ -257,87 +449,23 @@ export async function setup(options = {}) {
       return;
     }
 
-    // Step 3: Scrape WealthSimple to get account names
-    console.log('\n📊 Extracting account information from WealthSimple...');
-    console.log('(This will launch a browser window for authentication)\n');
+    const mapAllAccounts = response === 'all';
 
-    let wsTransactions;
-    try {
-      if (options.remoteBrowserUrl) {
-        console.log('Connecting to remote browser...');
-      } else {
-        console.log('Launching browser...');
-      }
-
-      wsTransactions = await scrapeTransactions({
+    // Step 3: Perform account mapping
+    await performAccountMapping(
+      {
+        mapAllAccounts,
         verbose: options.verbose,
-        remoteBrowserUrl: options.remoteBrowserUrl
-      });
+        remoteBrowserUrl: options.remoteBrowserUrl,
+        config: options.config
+      },
+      rl
+    );
 
-      if (wsTransactions.length === 0) {
-        console.log('\n⚠️  No transactions found. Cannot determine account names.');
-        console.log('You may need to manually configure account mappings in config.toml.');
-        return;
-      }
-
-      console.log(`✅ Found ${wsTransactions.length} transactions\n`);
-    } catch (error) {
-      console.error('\n❌ Failed to extract account information:', error.message);
-      console.log(
-        'You can still use ws-actual by manually configuring account mappings in config.toml.'
-      );
-      return;
-    }
-
-    // Step 4: Get unique accounts from transactions
-    const uniqueAccounts = getUniqueAccounts(wsTransactions);
-    console.log(`📋 Detected ${uniqueAccounts.length} WealthSimple account(s):\n`);
-    uniqueAccounts.forEach((account, index) => {
-      console.log(`  ${index + 1}. ${account}`);
-    });
-
-    // Step 5: Connect to ActualBudget to map accounts
-    console.log('\n🔗 Connecting to ActualBudget for account mapping...');
-    const client = await createClient({
-      serverUrl: serverUrl,
-      password: password,
-      budgetId: selectedSyncId,
-      verbose: options.verbose
-    });
-
-    try {
-      console.log('✅ Connected\n');
-
-      // Step 6: Prompt for mapping each account
-      let mappedCount = 0;
-      for (const wsAccount of uniqueAccounts) {
-        console.log(`\n🏦 WealthSimple Account: "${wsAccount}"`);
-
-        const resolvedMapping = await promptForAccountMapping(wsAccount, client, fullConfig, rl);
-
-        if (resolvedMapping) {
-          mappedCount++;
-        }
-      }
-
-      // Summary
-      console.log('\n\n✨ Setup Complete!\n');
-      console.log('─'.repeat(50));
-      console.log('\n📊 Summary:');
-      console.log(`   ActualBudget Server: ${serverUrl}`);
-      console.log(`   Budget: ${selectedBudget.name}`);
-      console.log(`   Accounts mapped: ${mappedCount} / ${uniqueAccounts.length}`);
-
-      if (mappedCount < uniqueAccounts.length) {
-        console.log(`\n⚠️  ${uniqueAccounts.length - mappedCount} account(s) were not mapped.`);
-        console.log('   Transactions from unmapped accounts will be skipped during import.');
-      }
-
-      console.log('\n🎉 You can now import transactions with:');
-      console.log('   ws-actual import');
-    } finally {
-      await client.shutdown();
-    }
+    // Add server and budget info to output
+    console.log('\n📋 Configuration:');
+    console.log(`   ActualBudget Server: ${serverUrl}`);
+    console.log(`   Budget: ${selectedBudget.name}`);
   } catch (error) {
     console.error('\n❌ Setup failed:', error.message);
     if (options.verbose) {
@@ -350,5 +478,6 @@ export async function setup(options = {}) {
 }
 
 export default {
-  setup
+  setup,
+  setupAccounts
 };

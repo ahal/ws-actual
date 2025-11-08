@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { importTransactions, setup } from '../src/index.js';
+import { importTransactions, setup, setupAccounts } from '../src/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,8 +30,8 @@ program
   .description('Import WealthSimple transactions to ActualBudget')
   .version(packageJson.version);
 
-// Setup command
-program
+// Setup command with nested subcommands
+const setupCommand = program
   .command('setup')
   .description('Interactive setup - connect to ActualBudget and map accounts')
   .option('--config <path>', 'Path to custom config.toml file')
@@ -44,6 +44,31 @@ program
     } catch (error) {
       console.error('Error:', error.message);
       if (options.verbose) {
+        console.error(error.stack);
+      }
+      process.exit(1);
+    }
+  });
+
+// Setup accounts nested subcommand
+setupCommand
+  .command('accounts')
+  .description('Map WealthSimple accounts to ActualBudget accounts (skip server config)')
+  .option('--all', 'Map all accounts (including already mapped)')
+  .option('--config <path>', 'Path to custom config.toml file')
+  .option('--remote-browser-url <url>', 'Connect to existing browser via Chrome DevTools Protocol')
+  .option('--verbose', 'Show detailed output')
+  .action(async (options, command) => {
+    // Merge parent options with subcommand options
+    const parentOptions = command.parent?.opts() || {};
+    const mergedOptions = { ...parentOptions, ...options };
+
+    try {
+      await setupAccounts(mergedOptions);
+      process.exit(0);
+    } catch (error) {
+      console.error('Error:', error.message);
+      if (mergedOptions.verbose) {
         console.error(error.stack);
       }
       process.exit(1);

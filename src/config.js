@@ -119,25 +119,15 @@ export function resolveAccount(wsAccountName, config) {
       continue;
     }
 
-    const pattern = account.wsAccountName;
-
-    // Try regex match first (works for both regex patterns and exact matches)
-    try {
-      const regex = new RegExp(`^${pattern}$`, 'i');
-      if (regex.test(wsAccountName)) {
-        // Determine if it was a regex or exact match
-        const matchType = /[.*+?^${}()|[\]\\]/.test(pattern) ? 'regex' : 'exact';
-        return {
-          accountId: account.actualAccountId,
-          accountName: wsAccountName,
-          needsLookup: false,
-          matchType,
-          matchedPattern: pattern
-        };
-      }
-    } catch {
-      // Invalid regex pattern, skip
-      continue;
+    // Use simple case-insensitive string equality
+    if (wsAccountName.toLowerCase() === account.wsAccountName.toLowerCase()) {
+      return {
+        accountId: account.actualAccountId,
+        accountName: wsAccountName,
+        needsLookup: false,
+        matchType: 'exact',
+        matchedPattern: account.wsAccountName
+      };
     }
   }
 

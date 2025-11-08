@@ -23,7 +23,28 @@ function parseDate(value) {
     return null;
   }
 
-  const normalizedValue = value
+  // Handle relative dates
+  const today = new Date();
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (normalizedValue === 'today') {
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  if (normalizedValue === 'yesterday') {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const year = yesterday.getFullYear();
+    const month = String(yesterday.getMonth() + 1).padStart(2, '0');
+    const day = String(yesterday.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Handle standard date formats
+  const cleanedValue = value
     .replace(/\s+/g, ' ')
     .replace(/(\d{4})\s*(\d)/, '$1 $2')
     .trim();
@@ -35,7 +56,7 @@ function parseDate(value) {
   ];
 
   for (const format of dateFormats) {
-    const parsedDate = parse(normalizedValue, format, new Date());
+    const parsedDate = parse(cleanedValue, format, new Date());
     if (isValid(parsedDate)) {
       // Format date without timezone conversion
       const year = parsedDate.getFullYear();
@@ -132,16 +153,34 @@ export async function processTransactionDetails(page, elementSelector) {
 
     // Extract rows from the transaction details
     let rows = [];
+    let has5ChildRow = false;
+
     for (let i = 0; i < element.children[0]?.children?.length ?? 0; i++) {
       const row = element.children[0].children[i];
+
       if (row.children.length === 2 && row.children[0].textContent) {
+        // Standard 2-child row (label-value pair)
         rows.push(row);
+      } else if (row.children.length === 5) {
+        // Today/Yesterday format: single row with 5 children
+        // Child 0: Account, Child 1: Status, Child 2: Date, Child 3: empty, Child 4: Amount
+        has5ChildRow = true;
+        // We'll process this separately below
       } else {
         // Handle nested structure (e.g., Interac transfers)
         const result = [];
         for (let j = 0; j < row.children.length; j++) {
           if (row.children[j].children.length === 2 && row.children[j].children[0].textContent) {
+            // Direct label-value pair
             result.push(row.children[j]);
+          } else if (row.children[j].children.length > 2) {
+            // Deeper nesting - check if children are label-value pairs
+            for (let k = 0; k < row.children[j].children.length; k++) {
+              const nestedChild = row.children[j].children[k];
+              if (nestedChild.children.length === 2 && nestedChild.children[0].textContent) {
+                result.push(nestedChild);
+              }
+            }
           }
         }
         rows.push(result);
@@ -149,11 +188,47 @@ export async function processTransactionDetails(page, elementSelector) {
     }
     rows = rows.flat();
 
-    if (!rows || rows.length === 0) {
+    if (rows.length === 0 && !has5ChildRow) {
       return null;
     }
 
     const rowData = {};
+
+    // Handle 5-child row format (Today/Yesterday transactions)
+    if (has5ChildRow && element.children[0]?.children?.length > 0) {
+      const row = element.children[0].children[0];
+      if (row.children.length === 5) {
+        // Extract fields from the 5-child row
+        // Each child contains the label and value as separate text nodes/elements
+        const fields = [];
+
+        // Process each child (Account, Status, Date, empty, Amount)
+        for (let i = 0; i < 5; i++) {
+          if (i === 3) continue; // Skip empty child
+
+          const child = row.children[i];
+          const fullText = child.textContent || '';
+
+          // Split by newline to separate label from value
+          const lines = fullText.split('\n').map(l => l.trim()).filter(l => l);
+
+          if (lines.length >= 2) {
+            const label = lines[0];
+            const value = lines.slice(1).join(' ');
+            fields.push({ name: label, value });
+          } else if (lines.length === 1 && lines[0]) {
+            // If only one line, it might be the value without a label
+            // For amount, this is common
+            if (i === 4) { // Amount child
+              fields.push({ name: 'Amount', value: lines[0] });
+            }
+          }
+        }
+
+        rowData.fields = fields;
+        rowData.is5ChildFormat = true;
+      }
+    }
 
     // Parse each row
     for (let i = 0; i < rows.length; i++) {
@@ -195,62 +270,35 @@ export async function processTransactionDetails(page, elementSelector) {
       const button = document.getElementById(buttonId);
 
       if (button) {
-        // Full description is the button's text content
-        const description = button.textContent;
-        if (description) {
-          rowData.description = description;
-        }
-
-        // Extract subheading by looking for <p> tags with fontWeight >= 500
-        // Structure: button > div > div > div > [p (name), div > p (subheading)]
+        // Extract only the first paragraph as the main description
+        // Header structure typically has:
+        // - 1st paragraph (weight 500): Main type (e.g., "Institutional transfer")
+        // - 2nd paragraph (weight 500): Subheading (e.g., "Questrade")
+        // - 3rd paragraph (weight 100): Account
+        // - 4th paragraph (weight 500): Amount
         const allParagraphs = button.querySelectorAll('p');
-        for (const p of allParagraphs) {
-          const style = window.getComputedStyle(p);
-          const fontWeight = parseInt(style.fontWeight) || 400;
-          const text = p.textContent?.trim();
+        const paragraphs = Array.from(allParagraphs);
 
-          // Look for medium-weight text that's not the full description and not empty
-          // Skip the first paragraph (usually the main name)
-          if (fontWeight >= 500 && text && text !== description) {
-            // Find the second medium-weight paragraph - that's usually the subheading
-            if (!rowData.firstBoldText) {
-              rowData.firstBoldText = text;
-            } else if (!rowData.subheading) {
+        if (paragraphs.length > 0) {
+          // First paragraph is always the main description
+          const firstP = paragraphs[0];
+          rowData.description = firstP.textContent?.trim();
+
+          // Look for a second bold paragraph that could be a subheading
+          // This is usually more specific than the first paragraph
+          // Examples: "Questrade" for institutional transfers, "Referral bonus" for referrals
+          if (paragraphs.length > 1) {
+            const secondP = paragraphs[1];
+            const style = window.getComputedStyle(secondP);
+            const fontWeight = parseInt(style.fontWeight) || 400;
+            const text = secondP.textContent?.trim();
+
+            // If second paragraph is bold and different from first, capture it as subheading
+            if (fontWeight >= 500 && text && text !== rowData.description) {
               rowData.subheading = text;
-              break;
             }
           }
         }
-
-        // If we only found one bold text, that's probably the subheading
-        if (!rowData.subheading && rowData.firstBoldText) {
-          // Check if the first bold text looks like a transaction type
-          const text = rowData.firstBoldText;
-          // Common transaction types that should be considered subheadings
-          const typeKeywords = [
-            'interac',
-            'transfer',
-            'deposit',
-            'withdrawal',
-            'payment',
-            'debit',
-            'credit',
-            'purchase',
-            'refund',
-            'dividend',
-            'interest',
-            'bonus'
-          ];
-          const lowerText = text.toLowerCase();
-          const isLikelyType = typeKeywords.some((keyword) => lowerText.includes(keyword));
-
-          if (isLikelyType) {
-            rowData.subheading = text;
-          }
-        }
-
-        // Clean up temporary field
-        delete rowData.firstBoldText;
       }
     }
 
@@ -274,6 +322,11 @@ export function parseTransaction(rawData) {
   // Add description
   if (rawData.description) {
     transaction.description = rawData.description;
+  }
+
+  // Add subheading (e.g., "Questrade" for institutional transfers)
+  if (rawData.subheading) {
+    transaction.subheading = rawData.subheading;
   }
 
   // Infer type from subheading (bolded portion) if type is not present

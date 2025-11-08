@@ -11,8 +11,8 @@ import { getConfig, validateConfig, loadConfig, saveConfig, resolveAccount } fro
 import { formatTransactionsTable } from './table-formatter.js';
 import { getUniqueAccounts } from './account-mapper.js';
 
-// Re-export setup function
-export { setup } from './setup.js';
+// Re-export setup functions
+export { setup, setupAccounts } from './setup.js';
 
 /**
  * Main import function
