@@ -83,12 +83,20 @@ program
   .option('--server-url <url>', 'ActualBudget server URL')
   .option('--password <password>', 'ActualBudget password')
   .option('--remote-browser-url <url>', 'Connect to existing browser via Chrome DevTools Protocol')
+  .option('--timeframe <value>', 'Time range for transactions: all, last-week, last-30-days, last-60-days, last-90-days (default: last-30-days)', 'last-30-days')
   .option('--adjust-balances', 'Adjust account balances after import to match WealthSimple')
   .option('--account <name>', 'Only import from specified account (can be used multiple times)', collect, [])
   .option('--dry-run', 'Preview import without making changes')
   .option('--verbose', 'Show detailed output')
   .action(async (options) => {
     try {
+      // Validate timeframe option
+      const validTimeframes = ['all', 'last-week', 'last-30-days', 'last-60-days', 'last-90-days'];
+      if (!validTimeframes.includes(options.timeframe)) {
+        console.error(`Error: Invalid timeframe '${options.timeframe}'. Valid values: ${validTimeframes.join(', ')}`);
+        process.exit(1);
+      }
+
       // Merge global options with command options
       const globalOptions = program.opts();
       const mergedOptions = { ...options, ...globalOptions };

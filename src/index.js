@@ -50,7 +50,8 @@ export async function importTransactions(options = {}) {
     const scrapeResult = await scrapeTransactions({
       verbose: config.verbose,
       remoteBrowserUrl: options.remoteBrowserUrl,
-      keepContextOpen: keepContextOpen
+      keepContextOpen: keepContextOpen,
+      timeframe: options.timeframe || 'last-30-days'
     });
 
     // Extract transactions and context from result

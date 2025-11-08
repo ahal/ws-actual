@@ -463,9 +463,10 @@ continue;
  * @param {boolean} options.verbose - Log detailed progress
  * @param {string} options.remoteBrowserUrl - Chrome DevTools Protocol URL for remote browser connection
  * @param {boolean} options.keepContextOpen - Keep browser context open after scraping (for balance adjustment)
+ * @param {string} options.timeframe - Time range for transactions (all, last-week, last-30-days, last-60-days, last-90-days)
  * @returns {Promise<Array|Object>} - Array of parsed transactions, or {transactions, context} if keepContextOpen is true
  */
-export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = null, keepContextOpen = false }) {
+export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = null, keepContextOpen = false, timeframe = 'last-30-days' }) {
   let context;
   let shouldCloseContext = !keepContextOpen;
 
@@ -513,7 +514,8 @@ export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = n
     }
 
     // Navigate with longer timeout to allow for login and 2FA
-    await page.goto('https://my.wealthsimple.com/app/activity', {
+    const activityUrl = `https://my.wealthsimple.com/app/activity?timeframe=${timeframe}`;
+    await page.goto(activityUrl, {
       waitUntil: 'domcontentloaded',
       timeout: 300000 // 5 minutes for navigation (includes login + 2FA)
     });

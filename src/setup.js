@@ -85,7 +85,8 @@ async function performAccountMapping(options, rl) {
 
     wsTransactions = await scrapeTransactions({
       verbose,
-      remoteBrowserUrl
+      remoteBrowserUrl,
+      timeframe: 'last-30-days'
     });
 
     if (wsTransactions.length === 0) {
