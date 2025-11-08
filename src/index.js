@@ -86,9 +86,50 @@ export async function importTransactions(options = {}) {
     }
 
     // Get unique accounts
-    const uniqueAccounts = getUniqueAccounts(wsTransactions);
+    let uniqueAccounts = getUniqueAccounts(wsTransactions);
     if (config.verbose) {
-      console.log(`Accounts: ${uniqueAccounts.join(', ')}`);
+      console.log(`Accounts found: ${uniqueAccounts.join(', ')}`);
+    }
+
+    // Filter accounts if --account flag(s) specified
+    if (options.account && options.account.length > 0) {
+      const requestedAccounts = options.account;
+      const matchedAccounts = [];
+      const notFoundAccounts = [];
+
+      // Check each requested account against unique accounts (case-insensitive)
+      for (const requested of requestedAccounts) {
+        const match = uniqueAccounts.find(
+          (account) => account.toLowerCase() === requested.toLowerCase()
+        );
+        if (match) {
+          matchedAccounts.push(match);
+        } else {
+          notFoundAccounts.push(requested);
+        }
+      }
+
+      // Show warnings for accounts not found
+      if (notFoundAccounts.length > 0) {
+        console.log(
+          '\n⚠️  Warning: The following accounts were not found in scraped transactions:'
+        );
+        notFoundAccounts.forEach((account) => {
+          console.log(`  - ${account}`);
+        });
+      }
+
+      // Update uniqueAccounts to only include matched accounts
+      if (matchedAccounts.length > 0) {
+        uniqueAccounts = matchedAccounts;
+        console.log(`\n✓ Filtering to ${matchedAccounts.length} account(s):`);
+        matchedAccounts.forEach((account) => {
+          console.log(`  - ${account}`);
+        });
+      } else {
+        console.log('\n⚠️  No matching accounts found. Nothing to import.');
+        return { imported: 0, failed: 0, duplicates: 0 };
+      }
     }
 
     // Account configuration is already loaded in fullConfig

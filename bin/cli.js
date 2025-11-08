@@ -15,6 +15,16 @@ const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
 
 const program = new Command();
 
+/**
+ * Collector function for options that can be specified multiple times
+ * @param {string} value - The new value
+ * @param {Array} previous - Previously collected values
+ * @returns {Array} Updated array of values
+ */
+function collect(value, previous) {
+  return previous.concat([value]);
+}
+
 program
   .name('ws-actual')
   .description('Import WealthSimple transactions to ActualBudget')
@@ -49,6 +59,7 @@ program
   .option('--password <password>', 'ActualBudget password')
   .option('--remote-browser-url <url>', 'Connect to existing browser via Chrome DevTools Protocol')
   .option('--adjust-balances', 'Adjust account balances after import to match WealthSimple')
+  .option('--account <name>', 'Only import from specified account (can be used multiple times)', collect, [])
   .option('--dry-run', 'Preview import without making changes')
   .option('--verbose', 'Show detailed output')
   .action(async (options) => {
