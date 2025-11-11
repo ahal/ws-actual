@@ -29,23 +29,17 @@ const testCases = [
   },
 
   {
-    description: 'should match regex pattern',
+    description: 'should not match when names differ',
     wsAccountName: 'My TFSA Investment',
     config: {
       accounts: [
         {
-          wsAccountName: '.*TFSA.*',
+          wsAccountName: 'TFSA',
           actualAccountId: 'tfsa-account-id'
         }
       ]
     },
-    expected: {
-      accountId: 'tfsa-account-id',
-      accountName: 'My TFSA Investment',
-      needsLookup: false,
-      matchType: 'regex',
-      matchedPattern: '.*TFSA.*'
-    }
+    expected: null
   },
 
   {
@@ -63,26 +57,26 @@ const testCases = [
   },
 
   {
-    description: 'should match first pattern when multiple patterns match',
-    wsAccountName: 'Joint Chequing • Joint',
+    description: 'should match first exact match when multiple accounts exist',
+    wsAccountName: 'Joint Chequing',
     config: {
       accounts: [
         {
-          wsAccountName: 'Joint Chequing( • Joint)?',
+          wsAccountName: 'Joint Chequing',
           actualAccountId: 'joint-account-id'
         },
         {
-          wsAccountName: '.*Joint.*',
+          wsAccountName: 'Joint Savings',
           actualAccountId: 'other-joint-id'
         }
       ]
     },
     expected: {
       accountId: 'joint-account-id',
-      accountName: 'Joint Chequing • Joint',
+      accountName: 'Joint Chequing',
       needsLookup: false,
-      matchType: 'regex',
-      matchedPattern: 'Joint Chequing( • Joint)?'
+      matchType: 'exact',
+      matchedPattern: 'Joint Chequing'
     }
   },
 
@@ -123,26 +117,26 @@ const testCases = [
   },
 
   {
-    description: 'should handle invalid regex patterns gracefully',
-    wsAccountName: 'Test Account',
+    description: 'should match exact account name with special characters',
+    wsAccountName: 'Test Account [Special]',
     config: {
       accounts: [
         {
-          wsAccountName: '[invalid regex',
+          wsAccountName: 'Other Account',
           actualAccountId: 'account-id-1'
         },
         {
-          wsAccountName: 'Test Account',
+          wsAccountName: 'Test Account [Special]',
           actualAccountId: 'account-id-2'
         }
       ]
     },
     expected: {
       accountId: 'account-id-2',
-      accountName: 'Test Account',
+      accountName: 'Test Account [Special]',
       needsLookup: false,
       matchType: 'exact',
-      matchedPattern: 'Test Account'
+      matchedPattern: 'Test Account [Special]'
     }
   },
 
