@@ -1,5 +1,17 @@
 #!/usr/bin/env node
 
+// The @actual-app/api library has a bug in its internal runHandler function:
+// it calls `promise.then(cleanup)` without `.catch()`, which leaks a rejected
+// promise when any API call fails. Node v22 crashes on unhandled rejections.
+// The primary error is still propagated through our own try/catch chain and
+// shown to the user — this handler just prevents the process from crashing
+// due to the library's internal leaked rejection.
+process.on('unhandledRejection', (reason) => {
+  if (process.env.DEBUG) {
+    console.error('[DEBUG] Suppressed unhandled rejection from @actual-app/api:', reason);
+  }
+});
+
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';

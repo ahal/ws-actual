@@ -122,8 +122,14 @@ export class ActualClient {
     try {
       await this._connectToApi(dataDir);
     } catch (error) {
-      // Single retry on database errors
-      if (error.message.includes('out-of-sync') || error.message.includes('Database')) {
+      const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+
+      // Single retry on database/cache errors
+      if (
+        errorMessage.includes('out-of-sync') ||
+        errorMessage.includes('Database') ||
+        errorMessage.includes('No budget file is open')
+      ) {
         if (this.config.verbose) {
           console.log('Database error detected. Clearing cache and retrying...');
         }
@@ -135,13 +141,36 @@ export class ActualClient {
         }
         await this.clearCache();
         await mkdir(dataDir, { recursive: true });
-        await this._connectToApi(dataDir);
+
+        try {
+          await this._connectToApi(dataDir);
+        } catch (retryError) {
+          try {
+            await api.shutdown();
+          } catch {
+            // Ignore shutdown errors
+          }
+          const retryMessage =
+            retryError instanceof Error ? retryError.message : JSON.stringify(retryError);
+          throw new Error(
+            `Failed to open budget after cache clear: ${retryMessage}\n\n` +
+              `This usually means the Sync ID in your config is incorrect.\n` +
+              `Please verify your config at: ${this.config.configPath || '~/.config/ws-actual/config.toml'}\n` +
+              `Or reconfigure by running: ws-actual login`
+          );
+        }
 
         if (this.config.verbose) {
           console.log('✅ Connection successful after cache clear');
         }
       } else {
-        throw new Error(`Failed to connect to ActualBudget: ${error.message}`);
+        // Shut down API to prevent internal async processes from creating unhandled rejections
+        try {
+          await api.shutdown();
+        } catch {
+          // Ignore shutdown errors
+        }
+        throw new Error(`Failed to connect to ActualBudget: ${errorMessage}`);
       }
     }
   }

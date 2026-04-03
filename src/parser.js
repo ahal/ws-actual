@@ -270,33 +270,24 @@ export async function processTransactionDetails(page, elementSelector) {
       const button = document.getElementById(buttonId);
 
       if (button) {
-        // Extract only the first paragraph as the main description
-        // Header structure typically has:
-        // - 1st paragraph (weight 500): Main type (e.g., "Institutional transfer")
-        // - 2nd paragraph (weight 500): Subheading (e.g., "Questrade")
-        // - 3rd paragraph (weight 100): Account
-        // - 4th paragraph (weight 500): Amount
-        const allParagraphs = button.querySelectorAll('p');
-        const paragraphs = Array.from(allParagraphs);
+        // WealthSimple has used both span and p elements in the button header.
+        // Structure: [description] [type (optional)] [account with •] [amount with $]
+        const unmaskElements = Array.from(
+          button.querySelectorAll(
+            'span[data-fs-privacy-rule="unmask"], p[data-fs-privacy-rule="unmask"]'
+          )
+        );
 
-        if (paragraphs.length > 0) {
-          // First paragraph is always the main description
-          const firstP = paragraphs[0];
-          rowData.description = firstP.textContent?.trim();
+        // Keep only header text that is not an account name (contains •) or amount (contains $)
+        const contentElements = unmaskElements.filter((element) => {
+          const text = element.textContent?.trim() || '';
+          return text && !text.includes('•') && !text.includes('$');
+        });
 
-          // Look for a second bold paragraph that could be a subheading
-          // This is usually more specific than the first paragraph
-          // Examples: "Questrade" for institutional transfers, "Referral bonus" for referrals
-          if (paragraphs.length > 1) {
-            const secondP = paragraphs[1];
-            const style = window.getComputedStyle(secondP);
-            const fontWeight = parseInt(style.fontWeight) || 400;
-            const text = secondP.textContent?.trim();
-
-            // If second paragraph is bold and different from first, capture it as subheading
-            if (fontWeight >= 500 && text && text !== rowData.description) {
-              rowData.subheading = text;
-            }
+        if (contentElements.length > 0) {
+          rowData.description = contentElements[0].textContent?.trim();
+          if (contentElements.length > 1) {
+            rowData.subheading = contentElements[1].textContent?.trim();
           }
         }
       }
