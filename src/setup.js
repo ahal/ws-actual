@@ -44,6 +44,9 @@ async function suppressConsole(fn) {
  * @param {boolean} options.mapAllAccounts - Map all accounts (true) or only unmapped (false)
  * @param {boolean} options.verbose - Verbose output
  * @param {string} options.remoteBrowserUrl - Remote browser URL
+ * @param {string} options.browserExecutablePath - Browser executable path
+ * @param {string} options.browserUserDataDir - Browser profile directory
+ * @param {Object} options.browserLaunchOptions - Browser launch options
  * @param {string} options.config - Config file path
  * @param {Object} rl - Readline interface
  * @returns {Promise<void>}
@@ -53,6 +56,10 @@ async function performAccountMapping(options, rl) {
 
   // Load existing config
   const fullConfig = await loadConfig(configPath);
+  const browserExecutablePath = options.browserExecutablePath || fullConfig.browser?.executablePath;
+  const browserUserDataDir = options.browserUserDataDir || fullConfig.browser?.userDataDir;
+  const browserLaunchOptions =
+    options.browserLaunchOptions || fullConfig.browser?.launchOptions || {};
 
   if (!fullConfig.actualServer?.url || !fullConfig.actualServer?.syncId) {
     throw new Error(
@@ -86,7 +93,10 @@ async function performAccountMapping(options, rl) {
     wsTransactions = await scrapeTransactions({
       verbose,
       remoteBrowserUrl,
-      timeframe: 'last-30-days'
+      timeframe: 'last-30-days',
+      browserExecutablePath,
+      browserUserDataDir,
+      browserLaunchOptions
     });
 
     if (wsTransactions.length === 0) {
@@ -98,7 +108,9 @@ async function performAccountMapping(options, rl) {
     console.log(`✅ Found ${wsTransactions.length} transactions\n`);
   } catch (error) {
     console.error('\n❌ Failed to extract account information:', error.message);
-    console.log('You can still use ws-actual by manually configuring account mappings in config.toml.');
+    console.log(
+      'You can still use ws-actual by manually configuring account mappings in config.toml.'
+    );
     throw error;
   }
 
@@ -214,6 +226,9 @@ export async function setupAccounts(options = {}) {
         mapAllAccounts: options.all || false,
         verbose: options.verbose || false,
         remoteBrowserUrl: options.remoteBrowserUrl,
+        browserExecutablePath: options.browserExecutablePath,
+        browserUserDataDir: options.browserUserDataDir,
+        browserLaunchOptions: options.browserLaunchOptions,
         config: options.config
       },
       rl
@@ -458,6 +473,9 @@ export async function setup(options = {}) {
         mapAllAccounts,
         verbose: options.verbose,
         remoteBrowserUrl: options.remoteBrowserUrl,
+        browserExecutablePath: options.browserExecutablePath,
+        browserUserDataDir: options.browserUserDataDir,
+        browserLaunchOptions: options.browserLaunchOptions,
         config: options.config
       },
       rl

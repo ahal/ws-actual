@@ -51,7 +51,10 @@ export async function importTransactions(options = {}) {
       verbose: config.verbose,
       remoteBrowserUrl: options.remoteBrowserUrl,
       keepContextOpen: keepContextOpen,
-      timeframe: options.timeframe || 'last-30-days'
+      timeframe: options.timeframe || 'last-30-days',
+      browserExecutablePath: config.browserExecutablePath,
+      browserUserDataDir: config.browserUserDataDir,
+      browserLaunchOptions: config.browserLaunchOptions
     });
 
     // Extract transactions and context from result
@@ -460,9 +463,8 @@ export async function importTransactions(options = {}) {
           console.log('No account balances found on WealthSimple home page');
         } else {
           // Adjust balances in ActualBudget
-          const adjustmentResults = await client.adjustAccountBalances(
-            wsBalances,
-            (accountName) => resolveAccount(accountName, fullConfig)
+          const adjustmentResults = await client.adjustAccountBalances(wsBalances, (accountName) =>
+            resolveAccount(accountName, fullConfig)
           );
 
           // Sync changes

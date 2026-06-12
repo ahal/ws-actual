@@ -52,6 +52,14 @@ describe('Config Integration Tests', () => {
 url = "http://localhost:5006"
 syncId = "test-budget-id"
 
+[browser]
+executablePath = "/var/lib/flatpak/exports/bin/com.google.Chrome"
+userDataDir = "/home/ahal/.var/app/com.google.Chrome/config/google-chrome"
+
+[browser.launchOptions]
+chromiumSandbox = true
+args = ["--disable-dev-shm-usage"]
+
 [[accounts]]
 wsAccountName = "WealthSimple Cash"
 actualAccountId = "acc_001"
@@ -62,6 +70,16 @@ actualAccountId = "acc_001"
 
       assert.strictEqual(config.actualServer.url, 'http://localhost:5006');
       assert.strictEqual(config.actualServer.syncId, 'test-budget-id');
+      assert.strictEqual(
+        config.browser.executablePath,
+        '/var/lib/flatpak/exports/bin/com.google.Chrome'
+      );
+      assert.strictEqual(
+        config.browser.userDataDir,
+        '/home/ahal/.var/app/com.google.Chrome/config/google-chrome'
+      );
+      assert.strictEqual(config.browser.launchOptions.chromiumSandbox, true);
+      assert.deepStrictEqual(config.browser.launchOptions.args, ['--disable-dev-shm-usage']);
       assert.strictEqual(config.accounts.length, 1);
       assert.strictEqual(config.accounts[0].wsAccountName, 'WealthSimple Cash');
       assert.strictEqual(config.accounts[0].actualAccountId, 'acc_001');
@@ -130,6 +148,14 @@ url = "http://localhost:5006"
           url: 'http://test.local:5006',
           syncId: 'new-budget-id'
         },
+        browser: {
+          executablePath: '/var/lib/flatpak/exports/bin/com.google.Chrome',
+          userDataDir: '/home/ahal/.var/app/com.google.Chrome/config/google-chrome',
+          launchOptions: {
+            chromiumSandbox: true,
+            args: ['--disable-dev-shm-usage']
+          }
+        },
         accounts: [
           {
             wsAccountName: 'Test Account',
@@ -144,6 +170,16 @@ url = "http://localhost:5006"
       const loadedConfig = await loadConfig(testConfigPath);
       assert.strictEqual(loadedConfig.actualServer.url, 'http://test.local:5006');
       assert.strictEqual(loadedConfig.actualServer.syncId, 'new-budget-id');
+      assert.strictEqual(
+        loadedConfig.browser.executablePath,
+        '/var/lib/flatpak/exports/bin/com.google.Chrome'
+      );
+      assert.strictEqual(
+        loadedConfig.browser.userDataDir,
+        '/home/ahal/.var/app/com.google.Chrome/config/google-chrome'
+      );
+      assert.strictEqual(loadedConfig.browser.launchOptions.chromiumSandbox, true);
+      assert.deepStrictEqual(loadedConfig.browser.launchOptions.args, ['--disable-dev-shm-usage']);
     });
 
     it('should create config directory if it does not exist', async () => {
@@ -338,6 +374,14 @@ url = "http://localhost:5006"
           url: 'http://custom.local:5006',
           syncId: 'custom-budget-id'
         },
+        browser: {
+          executablePath: '/usr/bin/google-chrome',
+          userDataDir: '/home/test/.config/google-chrome',
+          launchOptions: {
+            channel: 'chrome',
+            chromiumSandbox: true
+          }
+        },
         accounts: [
           {
             wsAccountName: 'Account One',
@@ -359,6 +403,19 @@ url = "http://localhost:5006"
       // Verify the essential data is preserved
       assert.strictEqual(loadedConfig.actualServer.url, originalConfig.actualServer.url);
       assert.strictEqual(loadedConfig.actualServer.syncId, originalConfig.actualServer.syncId);
+      assert.strictEqual(
+        loadedConfig.browser.executablePath,
+        originalConfig.browser.executablePath
+      );
+      assert.strictEqual(loadedConfig.browser.userDataDir, originalConfig.browser.userDataDir);
+      assert.strictEqual(
+        loadedConfig.browser.launchOptions.channel,
+        originalConfig.browser.launchOptions.channel
+      );
+      assert.strictEqual(
+        loadedConfig.browser.launchOptions.chromiumSandbox,
+        originalConfig.browser.launchOptions.chromiumSandbox
+      );
       assert.strictEqual(loadedConfig.accounts.length, originalConfig.accounts.length);
     });
   });

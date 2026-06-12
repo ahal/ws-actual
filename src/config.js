@@ -52,6 +52,13 @@ export async function loadConfig(customPath = null) {
       config.accounts = [];
     }
 
+    if (!config.browser) {
+      config.browser = {};
+    }
+    if (!config.browser.launchOptions) {
+      config.browser.launchOptions = {};
+    }
+
     return config;
   } catch (error) {
     console.warn(`Could not load configuration from ${configPath}:`, error.message);
@@ -65,8 +72,26 @@ export function getDefaultConfig() {
       url: null,
       syncId: null
     },
+    browser: {},
     accounts: []
   };
+}
+
+function formatTomlString(value) {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function formatTomlValue(value) {
+  if (typeof value === 'string') {
+    return formatTomlString(value);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(formatTomlValue).join(', ')}]`;
+  }
+  return null;
 }
 
 export async function saveConfig(config, customPath = null) {
@@ -83,21 +108,46 @@ export async function saveConfig(config, customPath = null) {
     if (config.actualServer) {
       tomlContent += '[actualServer]\n';
       if (config.actualServer.url) {
-        tomlContent += `url = "${config.actualServer.url}"\n`;
+        tomlContent += `url = ${formatTomlString(config.actualServer.url)}\n`;
       }
       if (config.actualServer.syncId) {
-        tomlContent += `syncId = "${config.actualServer.syncId}"\n`;
+        tomlContent += `syncId = ${formatTomlString(config.actualServer.syncId)}\n`;
       }
       tomlContent += '\n';
+    }
+
+    const hasBrowserLaunchOptions =
+      config.browser?.launchOptions && Object.keys(config.browser.launchOptions).length > 0;
+
+    if (config.browser?.executablePath || config.browser?.userDataDir || hasBrowserLaunchOptions) {
+      tomlContent += '[browser]\n';
+      if (config.browser.executablePath) {
+        tomlContent += `executablePath = ${formatTomlString(config.browser.executablePath)}\n`;
+      }
+      if (config.browser.userDataDir) {
+        tomlContent += `userDataDir = ${formatTomlString(config.browser.userDataDir)}\n`;
+      }
+      tomlContent += '\n';
+
+      if (hasBrowserLaunchOptions) {
+        tomlContent += '[browser.launchOptions]\n';
+        for (const [key, value] of Object.entries(config.browser.launchOptions)) {
+          const formattedValue = formatTomlValue(value);
+          if (formattedValue !== null) {
+            tomlContent += `${key} = ${formattedValue}\n`;
+          }
+        }
+        tomlContent += '\n';
+      }
     }
 
     if (config.accounts && config.accounts.length > 0) {
       for (const account of config.accounts) {
         tomlContent += '[[accounts]]\n';
         if (account.wsAccountName) {
-          tomlContent += `wsAccountName = "${account.wsAccountName.replace(/"/g, '\\"')}"\n`;
+          tomlContent += `wsAccountName = ${formatTomlString(account.wsAccountName)}\n`;
         }
-        tomlContent += `actualAccountId = "${account.actualAccountId}"\n`;
+        tomlContent += `actualAccountId = ${formatTomlString(account.actualAccountId)}\n`;
         tomlContent += '\n';
       }
     }
@@ -145,6 +195,9 @@ export async function getConfig(options = {}, requirePassword = true) {
     dryRun: options.dryRun || false,
     verbose: options.verbose || false,
     password: null,
+    browserExecutablePath: tomlConfig.browser?.executablePath,
+    browserUserDataDir: tomlConfig.browser?.userDataDir,
+    browserLaunchOptions: tomlConfig.browser?.launchOptions || {},
     configPath: options.config
   };
 

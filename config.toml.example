@@ -5,6 +5,16 @@
 url = "http://localhost:5006"
 syncId = "your-sync-id-here"
 
+# Browser settings are optional. By default, ws-actual uses Playwright's bundled Chromium.
+# For Flatpak Chrome, use:
+#
+# [browser]
+# executablePath = "/var/lib/flatpak/exports/bin/com.google.Chrome"
+# userDataDir = "/home/you/.var/app/com.google.Chrome/config/google-chrome"
+#
+# [browser.launchOptions]
+# chromiumSandbox = true
+
 # Account mappings - WealthSimple patterns to ActualBudget account IDs
 # wsPattern can be exact strings or regex patterns
 

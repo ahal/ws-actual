@@ -34,6 +34,35 @@ async function suppressConsole(fn) {
   }
 }
 
+function getErrorText(error) {
+  if (!error || typeof error !== 'object') {
+    return String(error);
+  }
+
+  const parts = [
+    error.message,
+    error.reason,
+    error.meta?.error?.message,
+    error.meta?.error?.stack,
+    error.meta?.query?.sql
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join('\n') : JSON.stringify(error);
+}
+
+function isCacheError(error) {
+  const errorText = getErrorText(error);
+
+  return (
+    errorText.includes('out-of-sync') ||
+    errorText.includes('Database') ||
+    errorText.includes('invalid-schema') ||
+    errorText.includes('no such column') ||
+    errorText.includes('SqliteError') ||
+    errorText.includes('No budget file is open')
+  );
+}
+
 /**
  * Get the data directory path using XDG specification
  * @returns {string} Data directory path
@@ -122,14 +151,8 @@ export class ActualClient {
     try {
       await this._connectToApi(dataDir);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-
       // Single retry on database/cache errors
-      if (
-        errorMessage.includes('out-of-sync') ||
-        errorMessage.includes('Database') ||
-        errorMessage.includes('No budget file is open')
-      ) {
+      if (isCacheError(error)) {
         if (this.config.verbose) {
           console.log('Database error detected. Clearing cache and retrying...');
         }
@@ -150,13 +173,12 @@ export class ActualClient {
           } catch {
             // Ignore shutdown errors
           }
-          const retryMessage =
-            retryError instanceof Error ? retryError.message : JSON.stringify(retryError);
+          const retryMessage = getErrorText(retryError);
           throw new Error(
             `Failed to open budget after cache clear: ${retryMessage}\n\n` +
-              `This usually means the Sync ID in your config is incorrect.\n` +
+              'This usually means the Sync ID in your config is incorrect.\n' +
               `Please verify your config at: ${this.config.configPath || '~/.config/ws-actual/config.toml'}\n` +
-              `Or reconfigure by running: ws-actual login`
+              'Or reconfigure by running: ws-actual login'
           );
         }
 
@@ -170,7 +192,7 @@ export class ActualClient {
         } catch {
           // Ignore shutdown errors
         }
-        throw new Error(`Failed to connect to ActualBudget: ${errorMessage}`);
+        throw new Error(`Failed to connect to ActualBudget: ${getErrorText(error)}`);
       }
     }
   }
@@ -281,14 +303,19 @@ export class ActualClient {
     return transferPayees;
   }
 
+  hashImportedId(parts, prefix = 'ws') {
+    const transactionString = JSON.stringify(parts);
+    const hash = createHash('sha256').update(transactionString).digest('hex');
+    return `${prefix}_${hash.substring(0, 16)}`;
+  }
+
   /**
-   * Generate a deterministic imported_id for deduplication using hash of transaction contents
+   * Generate the legacy deterministic imported_id from transaction display contents.
+   * Existing imports may still have this ID, so keep it for duplicate checks.
    * @param {Object} transaction Transformed transaction data
-   * @returns {string} Deterministic imported ID
+   * @returns {string} Legacy deterministic imported ID
    */
-  generateImportedId(transaction) {
-    // Create a hash of the entire transaction contents for deterministic ID
-    // Build the object with sorted keys to ensure deterministic JSON.stringify
+  generateLegacyImportedId(transaction) {
     const sortedTransaction = {
       account: transaction.Account,
       amount: transaction.Amount,
@@ -297,9 +324,66 @@ export class ActualClient {
       payee: transaction.Payee
     };
 
-    const transactionString = JSON.stringify(sortedTransaction);
-    const hash = createHash('sha256').update(transactionString).digest('hex');
-    return `ws_${hash.substring(0, 16)}`; // Use first 16 characters of hash
+    return this.hashImportedId(sortedTransaction);
+  }
+
+  /**
+   * Generate a deterministic imported_id for deduplication.
+   * Prefer the source transaction ID because display fields can change between importer versions.
+   * @param {Object} transaction Transformed transaction data
+   * @returns {string} Deterministic imported ID
+   */
+  generateImportedId(transaction) {
+    if (transaction._sourceTransactionId) {
+      return this.hashImportedId({
+        account: transaction.Account,
+        sourceTransactionId: transaction._sourceTransactionId
+      });
+    }
+
+    return this.generateLegacyImportedId(transaction);
+  }
+
+  getDuplicateImportIds(transaction, importTransaction) {
+    const ids = new Set([importTransaction.imported_id]);
+    const legacyImportedId = this.generateLegacyImportedId(transaction);
+
+    if (legacyImportedId) {
+      ids.add(legacyImportedId);
+    }
+
+    return ids;
+  }
+
+  async findDuplicateImports(accountId, accountTransactions) {
+    const datedTransactions = accountTransactions.filter(({ import: importTransaction }) => {
+      return importTransaction.date;
+    });
+
+    if (datedTransactions.length === 0) {
+      return new Set();
+    }
+
+    const dates = datedTransactions.map(({ import: importTransaction }) => importTransaction.date);
+    const startDate = dates.reduce((earliest, date) => (date < earliest ? date : earliest));
+    const endDate = dates.reduce((latest, date) => (date > latest ? date : latest));
+    const existingTransactions = await api.getTransactions(accountId, startDate, endDate);
+    const existingImportedIds = new Set(
+      existingTransactions.map((transaction) => transaction.imported_id).filter(Boolean)
+    );
+
+    const duplicateIndexes = new Set();
+    accountTransactions.forEach((accountTransaction, index) => {
+      const duplicateIds = accountTransaction.duplicateImportIds || new Set();
+      for (const importedId of duplicateIds) {
+        if (existingImportedIds.has(importedId)) {
+          duplicateIndexes.add(index);
+          break;
+        }
+      }
+    });
+
+    return duplicateIndexes;
   }
 
   /**
@@ -427,6 +511,7 @@ export class ActualClient {
 
         // Convert to import format
         const importTransaction = this.convertToImportFormat(transaction);
+        const duplicateImportIds = this.getDuplicateImportIds(transaction, importTransaction);
 
         // Group by account
         if (!transactionsByAccount.has(accountId)) {
@@ -435,6 +520,7 @@ export class ActualClient {
         transactionsByAccount.get(accountId).push({
           original: transaction,
           import: importTransaction,
+          duplicateImportIds,
           index
         });
 
@@ -465,6 +551,9 @@ export class ActualClient {
             transactionsByAccount.get(transaction._transferToAccount).push({
               original: transaction, // Same original transaction for reference
               import: mirrorTransaction,
+              duplicateImportIds: new Set(
+                Array.from(duplicateImportIds).map((importedId) => `${importedId}_mirror`)
+              ),
               index,
               isMirrorTransfer: true
             });
@@ -496,18 +585,53 @@ export class ActualClient {
 
     for (const [accountId, accountTransactions] of transactionsByAccount) {
       try {
+        const duplicateIndexes = await this.findDuplicateImports(accountId, accountTransactions);
+        const importableTransactions = accountTransactions.filter(
+          (_, index) => !duplicateIndexes.has(index)
+        );
+
+        duplicateIndexes.forEach((index) => {
+          const accountTransaction = accountTransactions[index];
+          results.duplicates.push({
+            transaction: accountTransaction.original,
+            importedId: accountTransaction.import.imported_id
+          });
+        });
+
+        if (importableTransactions.length === 0) {
+          processedCount += accountTransactions.length;
+          if (onProgress) {
+            onProgress({
+              current: processedCount,
+              total: transactions.length,
+              phase: 'importing',
+              account: this.findAccount(accountId)?.name || accountId
+            });
+          }
+          continue;
+        }
+
         // Extract just the import format transactions
-        const importData = accountTransactions.map((t) => t.import);
+        const importData = importableTransactions.map((t) => t.import);
 
         // Call ActualBudget's importTransactions API
         const importResult = await api.importTransactions(accountId, importData);
+        const matchedImportedIds = new Set(
+          (importResult.updatedPreview || [])
+            .filter((preview) => preview.existing || preview.ignored)
+            .map((preview) => preview.transaction?.imported_id)
+            .filter(Boolean)
+        );
+        const addedTransactions = importableTransactions.filter(
+          (accountTransaction) => !matchedImportedIds.has(accountTransaction.import.imported_id)
+        );
 
         // Process results
         if (importResult.added && importResult.added.length > 0) {
           importResult.added.forEach((transactionId, idx) => {
-            if (idx < accountTransactions.length) {
+            if (idx < addedTransactions.length) {
               results.imported.push({
-                transaction: accountTransactions[idx].original,
+                transaction: addedTransactions[idx].original,
                 actualId: transactionId
               });
               results.summary.added++;
@@ -515,23 +639,23 @@ export class ActualClient {
           });
         }
 
-        if (importResult.updated && importResult.updated.length > 0) {
-          importResult.updated.forEach((transactionId, idx) => {
-            if (idx < accountTransactions.length) {
-              results.updated.push({
-                transaction: accountTransactions[idx].original,
-                actualId: transactionId
-              });
-              results.summary.updated++;
-            }
+        importableTransactions.forEach((accountTransaction) => {
+          if (!matchedImportedIds.has(accountTransaction.import.imported_id)) {
+            return;
+          }
+
+          results.duplicates.push({
+            transaction: accountTransaction.original,
+            importedId: accountTransaction.import.imported_id
           });
-        }
+          results.summary.updated++;
+        });
 
         if (importResult.errors && importResult.errors.length > 0) {
           importResult.errors.forEach((error, idx) => {
-            if (idx < accountTransactions.length) {
+            if (idx < importableTransactions.length) {
               results.failed.push({
-                transaction: accountTransactions[idx].original,
+                transaction: importableTransactions[idx].original,
                 error: error.message || error
               });
               results.summary.errors++;
@@ -588,9 +712,7 @@ export class ActualClient {
 
     try {
       const result = await api.runQuery(
-        api.q('transactions')
-          .filter({ account: accountId })
-          .calculate({ $sum: '$amount' })
+        api.q('transactions').filter({ account: accountId }).calculate({ $sum: '$amount' })
       );
       return result.data || 0;
     } catch (error) {

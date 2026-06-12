@@ -89,6 +89,10 @@ export function transformTransaction(wsTransaction, options = {}) {
     Amount: finalAmount
   };
 
+  if (wsTransaction.transactionId?.trim()) {
+    transformed._sourceTransactionId = wsTransaction.transactionId.trim();
+  }
+
   // Add transfer metadata if this is a transfer
   if (actualTransferInfo.isTransfer) {
     transformed._isTransfer = true;

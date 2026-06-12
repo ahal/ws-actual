@@ -87,6 +87,56 @@ describe('Deterministic ID Generation Tests', () => {
     assert.strictEqual(id.length, 19, 'Should be ws_ + 16 character hash');
   });
 
+  it('should prefer WealthSimple transaction ID over display fields', () => {
+    const client = new ActualClient(mockConfig);
+    const transaction1 = transformTransaction({
+      account: 'WealthSimple Cash',
+      date: '2024-01-15',
+      amount: '100.50',
+      description: 'Original payee',
+      type: 'deposit',
+      transactionId: 'txn_12345'
+    });
+    const transaction2 = transformTransaction({
+      account: 'WealthSimple Cash',
+      date: '2024-01-15',
+      amount: '100.50',
+      description: 'Renamed payee',
+      type: 'deposit',
+      transactionId: 'txn_12345'
+    });
+
+    assert.strictEqual(
+      client.generateImportedId(transaction1),
+      client.generateImportedId(transaction2)
+    );
+  });
+
+  it('should keep the legacy display-field hash available', () => {
+    const wsTransaction = {
+      account: 'WealthSimple Cash',
+      date: '2024-01-15',
+      amount: '100.50',
+      description: 'Salary deposit',
+      type: 'deposit',
+      transactionId: 'txn_12345'
+    };
+
+    const transformedWithSource = transformTransaction(wsTransaction);
+    const transformedWithoutSource = { ...transformedWithSource };
+    delete transformedWithoutSource._sourceTransactionId;
+    const client = new ActualClient(mockConfig);
+
+    assert.strictEqual(
+      client.generateLegacyImportedId(transformedWithSource),
+      client.generateImportedId(transformedWithoutSource)
+    );
+    assert.notStrictEqual(
+      client.generateImportedId(transformedWithSource),
+      client.generateLegacyImportedId(transformedWithSource)
+    );
+  });
+
   it('should generate deterministic hash-based ID structure', () => {
     const wsTransaction = {
       account: 'WealthSimple Cash',

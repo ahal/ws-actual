@@ -232,13 +232,16 @@ export async function scrapeAccountBalances(context, verbose = false) {
           .trim();
 
         // If we have multiple lines, take the first substantial one
-        const lines = name.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        const lines = name
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0);
         if (lines.length > 0) {
           name = lines[0];
         }
 
         // If name is still messy or too long, extract just the pattern
-        if (name.length > 50 || /[\$\d]{5,}/.test(name)) {
+        if (name.length > 50 || /[$\d]{5,}/.test(name)) {
           const match = cleanText.match(matchedPattern.pattern);
           if (match) {
             return matchedPattern.name;
@@ -272,8 +275,8 @@ export async function scrapeAccountBalances(context, verbose = false) {
           const { el, depth } = toCheck.shift();
 
           if (!el || visited.has(el) || depth > maxDepth) {
-continue;
-}
+            continue;
+          }
           visited.add(el);
 
           const text = el.textContent || '';
@@ -283,11 +286,11 @@ continue;
           if (dollarMatches && el.children.length < 10) {
             // Parse all amounts and use the largest one (usually the total balance)
             const amounts = dollarMatches
-              .map(match => {
+              .map((match) => {
                 const cleaned = match.replace(/[$,]/g, '');
                 return parseFloat(cleaned);
               })
-              .filter(amt => !isNaN(amt) && amt > 0);
+              .filter((amt) => !isNaN(amt) && amt > 0);
 
             if (amounts.length > 0) {
               // Return the largest amount (usually the main balance, not available balance)
@@ -299,7 +302,7 @@ continue;
           if (el.parentElement && depth < maxDepth) {
             toCheck.push({ el: el.parentElement, depth: depth + 1 });
             const siblings = Array.from(el.parentElement.children);
-            siblings.forEach(sibling => {
+            siblings.forEach((sibling) => {
               if (sibling !== el) {
                 toCheck.push({ el: sibling, depth: depth + 1 });
               }
@@ -315,24 +318,24 @@ continue;
 
       for (const element of allElements) {
         if (processedElements.has(element)) {
-continue;
-}
+          continue;
+        }
 
         const elementText = element.textContent || '';
 
         // Check each account pattern
         for (const accountPattern of accountNamePatterns) {
           if (!accountPattern.pattern.test(elementText)) {
-continue;
-}
+            continue;
+          }
 
           // Found potential account name element
           const accountName = extractAccountName(elementText, accountPattern);
 
           // Skip if this text is too long (likely contains more than just account name)
           if (accountName.length > 100) {
-continue;
-}
+            continue;
+          }
 
           // Try to find balance near this element
           const balance = findBalanceInTree(element);
@@ -340,7 +343,7 @@ continue;
           if (balance !== null && balance > 0) {
             // Check for duplicates
             const isDuplicate = accounts.some(
-              acc => acc.name === accountName && Math.abs(acc.balance - balance) < 0.01
+              (acc) => acc.name === accountName && Math.abs(acc.balance - balance) < 0.01
             );
 
             if (!isDuplicate) {
@@ -370,15 +373,15 @@ continue;
             // Check if contains account name
             for (const accountPattern of accountNamePatterns) {
               if (!accountPattern.pattern.test(text)) {
-continue;
-}
+                continue;
+              }
 
               const accountName = extractAccountName(text, accountPattern);
               const balance = findBalanceInTree(element, 2);
 
               if (balance !== null && balance > 0) {
                 const isDuplicate = accounts.some(
-                  acc => acc.name === accountName && Math.abs(acc.balance - balance) < 0.01
+                  (acc) => acc.name === accountName && Math.abs(acc.balance - balance) < 0.01
                 );
 
                 if (!isDuplicate) {
@@ -395,7 +398,7 @@ continue;
 
       // Deduplicate accounts - keep only the highest balance for each unique account name
       const accountMap = new Map();
-      accounts.forEach(acc => {
+      accounts.forEach((acc) => {
         // Skip invalid account names
         if (!acc.name || acc.name.length < 2 || acc.name.length > 50) {
           return;
@@ -407,14 +410,21 @@ continue;
         }
 
         // Skip names with concatenated account types (e.g., "RRSPRRSP", "ChequingSoloJoint")
-        const accountTypeCount = ['TFSA', 'RRSP', 'Chequing', 'Solo', 'Joint', 'RESP', 'Spousal'].filter(
-          type => {
-            const regex = new RegExp(type, 'gi');
-            const matches = acc.name.match(regex);
-            return matches && matches.length > 0;
-          }
-        ).length;
-        if (accountTypeCount > 2) { // Allow 2 for "Joint RESP", "Spousal RRSP"
+        const accountTypeCount = [
+          'TFSA',
+          'RRSP',
+          'Chequing',
+          'Solo',
+          'Joint',
+          'RESP',
+          'Spousal'
+        ].filter((type) => {
+          const regex = new RegExp(type, 'gi');
+          const matches = acc.name.match(regex);
+          return matches && matches.length > 0;
+        }).length;
+        if (accountTypeCount > 2) {
+          // Allow 2 for "Joint RESP", "Spousal RRSP"
           return;
         }
 
@@ -464,9 +474,20 @@ continue;
  * @param {string} options.remoteBrowserUrl - Chrome DevTools Protocol URL for remote browser connection
  * @param {boolean} options.keepContextOpen - Keep browser context open after scraping (for balance adjustment)
  * @param {string} options.timeframe - Time range for transactions (all, last-week, last-30-days, last-60-days, last-90-days)
+ * @param {string} options.browserExecutablePath - Browser executable path
+ * @param {string} options.browserUserDataDir - Browser profile directory
+ * @param {Object} options.browserLaunchOptions - Additional Playwright launch options
  * @returns {Promise<Array|Object>} - Array of parsed transactions, or {transactions, context} if keepContextOpen is true
  */
-export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = null, keepContextOpen = false, timeframe = 'last-30-days' }) {
+export async function scrapeTransactions({
+  verbose = false,
+  remoteBrowserUrl = null,
+  keepContextOpen = false,
+  timeframe = 'last-30-days',
+  browserExecutablePath = null,
+  browserUserDataDir = null,
+  browserLaunchOptions = {}
+}) {
   let context;
   let shouldCloseContext = !keepContextOpen;
 
@@ -487,18 +508,32 @@ export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = n
     }
   } else {
     // Launch Chromium with persistent profile
-    const { userDataDir } = await getBrowserInfo();
+    const browserInfo = await getBrowserInfo();
+    const userDataDir = browserUserDataDir || browserInfo.userDataDir;
+    const launchOptions = {
+      headless: false,
+      ...browserLaunchOptions
+    };
+
+    if (browserExecutablePath) {
+      launchOptions.executablePath = browserExecutablePath;
+
+      if (launchOptions.chromiumSandbox === undefined) {
+        launchOptions.chromiumSandbox = true;
+      }
+    }
 
     if (verbose) {
-      console.log('Launching Chromium with persistent profile...');
+      console.log('Launching browser with persistent profile...');
+      if (browserExecutablePath) {
+        console.log(`Browser executable: ${browserExecutablePath}`);
+      }
       console.log(`Profile directory: ${userDataDir}`);
       console.log('');
     }
 
     // Use launchPersistentContext to save login session
-    context = await chromium.launchPersistentContext(userDataDir, {
-      headless: false
-    });
+    context = await chromium.launchPersistentContext(userDataDir, launchOptions);
   }
 
   try {
@@ -510,6 +545,8 @@ export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = n
     page.setDefaultTimeout(300000); // 5 minutes
 
     if (verbose) {
+      console.log(`Browser pages: ${pages.length}`);
+      console.log(`Using page URL before navigation: ${page.url()}`);
       console.log('Navigating to WealthSimple activity page...');
     }
 
@@ -519,6 +556,10 @@ export async function scrapeTransactions({ verbose = false, remoteBrowserUrl = n
       waitUntil: 'domcontentloaded',
       timeout: 300000 // 5 minutes for navigation (includes login + 2FA)
     });
+
+    if (verbose) {
+      console.log(`Using page URL after navigation: ${page.url()}`);
+    }
 
     // Wait for user to log in and activity page to load
     let pageLoaded = false;

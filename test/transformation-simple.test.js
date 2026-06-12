@@ -203,7 +203,7 @@ describe('Transaction Transformation Basic Tests', () => {
     assert.ok(typeof transaction.Amount === 'number', 'Should have Amount field as number');
 
     // Check that no extra fields are present
-    const allowedFields = ['Date', 'Account', 'Payee', 'Notes', 'Amount'];
+    const allowedFields = ['Date', 'Account', 'Payee', 'Notes', 'Amount', '_sourceTransactionId'];
     const actualFields = Object.keys(transaction);
     const extraFields = actualFields.filter((field) => !allowedFields.includes(field));
     assert.strictEqual(

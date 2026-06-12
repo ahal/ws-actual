@@ -466,7 +466,8 @@ describe('Transformer Comprehensive Tests', () => {
       });
 
       // Ensure no extra fields are present
-      const allowedFields = ['Date', 'Account', 'Payee', 'Notes', 'Amount'];
+      const allowedFields = ['Date', 'Account', 'Payee', 'Notes', 'Amount', '_sourceTransactionId'];
+      const requiredFields = ['Date', 'Account', 'Payee', 'Notes', 'Amount'];
       const actualFields = Object.keys(result);
       const extraFields = actualFields.filter((field) => !allowedFields.includes(field));
       assert.strictEqual(
@@ -476,7 +477,7 @@ describe('Transformer Comprehensive Tests', () => {
       );
 
       // Ensure all required fields are present
-      allowedFields.forEach((field) => {
+      requiredFields.forEach((field) => {
         assert.ok(
           Object.prototype.hasOwnProperty.call(result, field),
           `Missing required field: ${field}`

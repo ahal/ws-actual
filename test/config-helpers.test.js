@@ -31,10 +31,7 @@ describe('Config Helper Functions', () => {
           'Windows should use AppData or .config'
         );
       } else {
-        assert.ok(
-          configDir.includes('.config'),
-          'Linux should use .config'
-        );
+        assert.ok(configDir.includes('.config'), 'Linux should use .config');
       }
     });
 
@@ -59,25 +56,14 @@ describe('Config Helper Functions', () => {
       const defaultConfig = getDefaultConfig();
 
       assert.ok('actualServer' in defaultConfig, 'Should have actualServer property');
-      assert.ok(
-        typeof defaultConfig.actualServer === 'object',
-        'actualServer should be an object'
-      );
+      assert.ok(typeof defaultConfig.actualServer === 'object', 'actualServer should be an object');
     });
 
     it('should have null url and syncId in actualServer', () => {
       const defaultConfig = getDefaultConfig();
 
-      assert.strictEqual(
-        defaultConfig.actualServer.url,
-        null,
-        'Default URL should be null'
-      );
-      assert.strictEqual(
-        defaultConfig.actualServer.syncId,
-        null,
-        'Default syncId should be null'
-      );
+      assert.strictEqual(defaultConfig.actualServer.url, null, 'Default URL should be null');
+      assert.strictEqual(defaultConfig.actualServer.syncId, null, 'Default syncId should be null');
     });
 
     it('should have empty accounts array', () => {
@@ -86,6 +72,13 @@ describe('Config Helper Functions', () => {
       assert.ok('accounts' in defaultConfig, 'Should have accounts property');
       assert.ok(Array.isArray(defaultConfig.accounts), 'accounts should be an array');
       assert.strictEqual(defaultConfig.accounts.length, 0, 'accounts should be empty');
+    });
+
+    it('should have browser property', () => {
+      const defaultConfig = getDefaultConfig();
+
+      assert.ok('browser' in defaultConfig, 'Should have browser property');
+      assert.deepStrictEqual(defaultConfig.browser, {}, 'browser should default to empty object');
     });
 
     it('should return new object on each call', () => {
@@ -101,13 +94,10 @@ describe('Config Helper Functions', () => {
   describe('getDefaultConfig structure validation', () => {
     it('should have all required top-level properties', () => {
       const defaultConfig = getDefaultConfig();
-      const requiredProps = ['actualServer', 'accounts'];
+      const requiredProps = ['actualServer', 'browser', 'accounts'];
 
       requiredProps.forEach((prop) => {
-        assert.ok(
-          prop in defaultConfig,
-          `Default config should have "${prop}" property`
-        );
+        assert.ok(prop in defaultConfig, `Default config should have "${prop}" property`);
       });
     });
 
@@ -125,14 +115,11 @@ describe('Config Helper Functions', () => {
 
     it('should not have extra unexpected properties', () => {
       const defaultConfig = getDefaultConfig();
-      const expectedProps = ['actualServer', 'accounts'];
+      const expectedProps = ['actualServer', 'browser', 'accounts'];
 
       const actualProps = Object.keys(defaultConfig);
       actualProps.forEach((prop) => {
-        assert.ok(
-          expectedProps.includes(prop),
-          `Unexpected property "${prop}" in default config`
-        );
+        assert.ok(expectedProps.includes(prop), `Unexpected property "${prop}" in default config`);
       });
     });
   });

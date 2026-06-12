@@ -80,6 +80,25 @@ Transactions are only imported if the WealthSimple account name has a mapping co
 
 The tool stores ActualBudget data cache in the XDG data directory: `$XDG_DATA_HOME/ws-actual/` (typically `~/.local/share/ws-actual/`).
 
+### Browser Configuration
+
+By default, the tool launches Playwright's bundled Chromium with a persistent profile in `$XDG_DATA_HOME/ws-actual/browser-chromium/`.
+
+To use another browser executable, add a `[browser]` section:
+
+```toml
+[browser]
+executablePath = "/var/lib/flatpak/exports/bin/com.google.Chrome"
+userDataDir = "/home/you/.var/app/com.google.Chrome/config/google-chrome"
+
+[browser.launchOptions]
+chromiumSandbox = true
+```
+
+Values under `[browser.launchOptions]` are passed to Playwright's persistent browser launch options. For example, you can configure `channel`, `args`, or `chromiumSandbox`.
+
+Do not use a profile that is already open in another Chrome process. Close Chrome first, or use a separate profile directory.
+
 List available ActualBudget accounts:
 ```bash
 npx ws-actual accounts list

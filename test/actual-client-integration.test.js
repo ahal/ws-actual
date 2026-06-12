@@ -468,6 +468,23 @@ describe('ActualClient Integration Tests', () => {
 
       assert.notStrictEqual(format1.imported_id, format2.imported_id);
     });
+
+    it('should check source and legacy IDs for duplicate detection', () => {
+      const client = new ActualClient(mockConfig);
+      const transaction = {
+        Date: '2024-01-15',
+        Account: 'Test Account',
+        Payee: 'Test Payee',
+        Notes: 'Test transaction [txn_source_1]',
+        Amount: 10000,
+        _sourceTransactionId: 'txn_source_1'
+      };
+      const importFormat = client.convertToImportFormat(transaction);
+      const duplicateIds = client.getDuplicateImportIds(transaction, importFormat);
+
+      assert.ok(duplicateIds.has(client.generateImportedId(transaction)));
+      assert.ok(duplicateIds.has(client.generateLegacyImportedId(transaction)));
+    });
   });
 
   describe('Account Filtering', () => {
